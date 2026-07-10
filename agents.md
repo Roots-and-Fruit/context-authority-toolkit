@@ -68,6 +68,21 @@ When tooltip **interaction behavior** changes, also run:
 
 - `tests/manual-tooltip-gate.md` checklist
 
+## Release workflow
+
+- Bump both plugin version surfaces together:
+  - `context-authority-toolkit.php` header `Version:`
+  - `CAT_TOOLKIT_VERSION` constant
+- Keep `readme.txt` in sync:
+  - update `Stable tag`
+  - add/update changelog entry
+- Ensure plugin assets use `CAT_TOOLKIT_VERSION` for cache-busting query args.
+- Commit release changes, create an annotated tag (for example `v0.9.2`), and push branch + tag.
+- This repository auto-publishes GitHub Releases from pushed tags via GitHub Actions.
+- After pushing a tag, validate release publication and asset upload (MCP or GitHub UI), including:
+  - release tag exists (for example `v0.9.2`)
+  - release zip asset is attached
+
 ## Canonical docs
 - Architecture: `docs/internal/architecture.md`
 - Behavior contracts (full): `docs/internal/contracts.md`
