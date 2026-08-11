@@ -46,16 +46,24 @@ class Cat_Term_Settings {
 	const DEFAULT_TERM_SLUG = 'term';
 
 	/**
+	 * Option key for deferred rewrite flush.
+	 */
+	const OPTION_REWRITE_FLUSH_NEEDED = 'cat_rewrite_flush_needed';
+
+	/**
 	 * Wire settings hooks.
 	 */
 	public function __construct() {
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_menu', array( $this, 'register_settings_page' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_settings_assets' ) );
-		add_action( 'update_option_' . self::OPTION_TERM_SLUG, array( $this, 'maybe_flush_rewrites_on_slug_change' ), 10, 2 );
-		add_action( 'update_option_' . self::OPTION_PERMALINK_INCLUDE_CATEGORY, array( $this, 'maybe_flush_rewrites_on_permalink_change' ), 10, 2 );
-		add_action( 'add_option_' . self::OPTION_TERM_SLUG, array( $this, 'maybe_flush_rewrites_on_slug_add' ), 10, 2 );
-		add_action( 'add_option_' . self::OPTION_PERMALINK_INCLUDE_CATEGORY, array( $this, 'maybe_flush_rewrites_on_permalink_add' ), 10, 2 );
+		add_action( 'init', array( $this, 'maybe_flush_rewrites' ), 99 );
+		add_action( 'update_option_' . self::OPTION_TERM_SLUG, array( $this, 'request_rewrite_flush_on_slug_change' ), 10, 2 );
+		add_action( 'update_option_' . self::OPTION_PERMALINK_INCLUDE_CATEGORY, array( $this, 'request_rewrite_flush_on_permalink_change' ), 10, 2 );
+		add_action( 'update_option_' . self::OPTION_CATEGORIES_ENABLED, array( $this, 'request_rewrite_flush_on_categories_change' ), 10, 2 );
+		add_action( 'add_option_' . self::OPTION_TERM_SLUG, array( $this, 'request_rewrite_flush_on_slug_add' ), 10, 2 );
+		add_action( 'add_option_' . self::OPTION_PERMALINK_INCLUDE_CATEGORY, array( $this, 'request_rewrite_flush_on_permalink_add' ), 10, 2 );
+		add_action( 'add_option_' . self::OPTION_CATEGORIES_ENABLED, array( $this, 'request_rewrite_flush_on_categories_add' ), 10, 2 );
 	}
 
 	/**
@@ -211,7 +219,7 @@ class Cat_Term_Settings {
 			checked( self::are_categories_enabled(), true, false ),
 			esc_html__( 'Enable Categories for glossary terms', 'context-authority-toolkit' )
 		);
-		echo '<p class="description">' . esc_html__( 'When enabled, you can group terms into Categories. Category taxonomy UI ships in a follow-up release.', 'context-authority-toolkit' ) . '</p>';
+		echo '<p class="description">' . esc_html__( 'When enabled, Categories appear under Term and can be assigned on glossary terms.', 'context-authority-toolkit' ) . '</p>';
 	}
 
 	/**
@@ -240,7 +248,7 @@ class Cat_Term_Settings {
 			echo '<p class="description">' . esc_html(
 				sprintf(
 					/* translators: %s: example permalink path */
-					__( 'Example when enabled: %s — takes effect once Categories are available.', 'context-authority-toolkit' ),
+					__( 'Example when enabled: %s', 'context-authority-toolkit' ),
 					home_url( '/' . $slug . '/example-category/example-term/' )
 				)
 			) . '</p>';
@@ -341,63 +349,116 @@ class Cat_Term_Settings {
 	}
 
 	/**
-	 * Flush rewrites when term slug option is first added with a non-default value.
+	 * Request a deferred rewrite flush (runs on next init after CPT/taxonomy register).
+	 *
+	 * @return void
+	 */
+	public static function request_rewrite_flush() {
+		update_option( self::OPTION_REWRITE_FLUSH_NEEDED, 1, false );
+	}
+
+	/**
+	 * Flush rewrite rules once when flagged.
+	 *
+	 * @return void
+	 */
+	public function maybe_flush_rewrites() {
+		if ( ! get_option( self::OPTION_REWRITE_FLUSH_NEEDED ) ) {
+			return;
+		}
+
+		flush_rewrite_rules( false );
+		delete_option( self::OPTION_REWRITE_FLUSH_NEEDED );
+	}
+
+	/**
+	 * Queue flush when term slug is first added with a non-default value.
 	 *
 	 * @param string $option Option name.
 	 * @param mixed  $value  Option value.
 	 * @return void
 	 */
-	public function maybe_flush_rewrites_on_slug_add( $option, $value ) {
+	public function request_rewrite_flush_on_slug_add( $option, $value ) {
 		unset( $option );
 		$new = self::sanitize_term_slug( $value );
 		if ( self::DEFAULT_TERM_SLUG !== $new ) {
-			flush_rewrite_rules( false );
+			self::request_rewrite_flush();
 		}
 	}
 
 	/**
-	 * Flush rewrites when permalink-include option is first added as true.
+	 * Queue flush when permalink-include option is first added as true.
 	 *
 	 * @param string $option Option name.
 	 * @param mixed  $value  Option value.
 	 * @return void
 	 */
-	public function maybe_flush_rewrites_on_permalink_add( $option, $value ) {
+	public function request_rewrite_flush_on_permalink_add( $option, $value ) {
 		unset( $option );
 		if ( self::sanitize_boolean_option( $value ) ) {
-			flush_rewrite_rules( false );
+			self::request_rewrite_flush();
 		}
 	}
 
 	/**
-	 * Flush rewrites only when the term slug actually changes.
+	 * Queue flush when categories are first added as enabled.
+	 *
+	 * @param string $option Option name.
+	 * @param mixed  $value  Option value.
+	 * @return void
+	 */
+	public function request_rewrite_flush_on_categories_add( $option, $value ) {
+		unset( $option );
+		if ( self::sanitize_boolean_option( $value ) ) {
+			self::request_rewrite_flush();
+		}
+	}
+
+	/**
+	 * Queue flush only when the term slug actually changes.
 	 *
 	 * @param mixed $old_value Previous value.
 	 * @param mixed $value     New value.
 	 * @return void
 	 */
-	public function maybe_flush_rewrites_on_slug_change( $old_value, $value ) {
+	public function request_rewrite_flush_on_slug_change( $old_value, $value ) {
 		$old = self::sanitize_term_slug( $old_value );
 		$new = self::sanitize_term_slug( $value );
 
 		if ( $old !== $new ) {
-			flush_rewrite_rules( false );
+			self::request_rewrite_flush();
 		}
 	}
 
 	/**
-	 * Flush rewrites only when permalink-include actually changes.
+	 * Queue flush only when permalink-include actually changes.
 	 *
 	 * @param mixed $old_value Previous value.
 	 * @param mixed $value     New value.
 	 * @return void
 	 */
-	public function maybe_flush_rewrites_on_permalink_change( $old_value, $value ) {
+	public function request_rewrite_flush_on_permalink_change( $old_value, $value ) {
 		$old = self::sanitize_boolean_option( $old_value );
 		$new = self::sanitize_boolean_option( $value );
 
 		if ( $old !== $new ) {
-			flush_rewrite_rules( false );
+			self::request_rewrite_flush();
+		}
+	}
+
+	/**
+	 * Queue flush when categories enabled actually changes.
+	 *
+	 * @param mixed $old_value Previous value.
+	 * @param mixed $value     New value.
+	 * @return void
+	 */
+	public function request_rewrite_flush_on_categories_change( $old_value, $value ) {
+		$old = self::sanitize_boolean_option( $old_value );
+		$new = self::sanitize_boolean_option( $value );
+
+		if ( $old !== $new ) {
+			self::request_rewrite_flush();
 		}
 	}
 }

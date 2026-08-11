@@ -89,12 +89,27 @@ class Cat_Glossary_Admin {
 				'menu_icon'    => add_query_arg( 'ver', CAT_TOOLKIT_VERSION, CAT_TOOLKIT_URL . 'assets/images/term-icon.svg' ),
 				'hierarchical' => false,
 				'rewrite'      => array(
-					'slug'       => Cat_Term_Settings::get_term_slug(),
+					'slug'       => self::get_rewrite_slug(),
 					'with_front' => false,
 				),
 				'supports'     => array( 'title', 'editor', 'excerpt', 'author', 'revisions', 'custom-fields' ),
 			)
 		);
+	}
+
+	/**
+	 * Build CPT rewrite slug from Term Settings.
+	 *
+	 * @return string
+	 */
+	private static function get_rewrite_slug() {
+		$base = Cat_Term_Settings::get_term_slug();
+
+		if ( Cat_Term_Settings::should_include_category_in_permalink() ) {
+			return $base . '/%' . Cat_Term_Category::TAXONOMY . '%';
+		}
+
+		return $base;
 	}
 
 	/**
