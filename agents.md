@@ -24,13 +24,20 @@ This plugin detects glossary terms in post/comment content and wraps the **first
 | `includes/class-cat-glossary-handler.php` | Content filtering — wraps first match in `the_content`/`comment_text` |
 | `includes/class-cat-glossary-admin.php` | CPT registration, meta, block editor sidebar |
 | `includes/class-cat-glossary-hovercards.php` | Frontend asset enqueueing |
+| `includes/class-cat-term-settings.php` | Term → Settings (slug, categories toggle, permalink mode) |
 | `assets/js/glossary-hovercards.js` | Interaction states, click/hover/focus/escape handling |
+| `assets/js/term-settings.js` | Settings-screen preview + conditional permalink control |
 
 ## Data model
 
-- **CPT:** `term` (never rename without explicit approval)
+- **CPT:** `term` (never rename without explicit approval; rewrite base via `Cat_Term_Settings::get_term_slug()`)
 - **Meta keys:** `cat_alternatives` (array), `cat_tooltip_content` (plain text), `cat_disable_autolinking` (boolean)
+- **Term structure options:** `cat_term_slug`, `cat_categories_enabled`, `cat_term_permalink_include_category` — read only via `Cat_Term_Settings` getters
 - **Cache group:** `context-authority-toolkit` | **Cache key:** `items-v{version}`
+
+## Category taxonomy note
+
+Future Category taxonomy work must call `Cat_Term_Settings::are_categories_enabled()` and `should_include_category_in_permalink()` — do not read those options directly. Category UI must stay labeled **Category** and must not reuse post `category`.
 
 ## Critical behavior contracts
 
