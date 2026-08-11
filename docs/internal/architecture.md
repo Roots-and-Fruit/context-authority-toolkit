@@ -20,6 +20,7 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Loads published glossary items
   - Handles matching data and regex generation
   - Maintains cache invalidation on glossary saves
+  - `Cat_Glossary::clear_items_cache()` is the only sanctioned glossary cache clear path for all modules
 - `includes/class-cat-glossary-handler.php`
   - Filters `the_content` and `comment_text`
   - Skips excluded HTML contexts
@@ -36,12 +37,16 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Owns Term → Settings screen under the `term` CPT menu (not Settings → General)
   - Options: `cat_term_slug`, `cat_categories_enabled`, `cat_term_permalink_include_category`
   - Static getters are the only intended read path for slug/category/permalink consumers
-  - Defers rewrite flushes via `cat_rewrite_flush_needed` until after CPT/taxonomy registration
+  - Defers rewrite flushes via `cat_rewrite_flush_needed` (autoloaded only while set, deleted after flush; read via alloptions, never a standalone query)
   - Enqueues `assets/js/term-settings.js` only on the Term Settings admin screen
 - `includes/class-cat-term-category.php`
   - Registers `cat-term-category` taxonomy when Categories are enabled (labels: Category / Categories)
+  - Taxonomy caps: manage/edit/delete map to `manage_options`; assign maps to `edit_posts` (never core `manage_categories`)
+  - Owns `cat_primary_category` post meta (explicit primary; deterministic lowest-term-ID fallback with backfill; self-healing on assignment changes)
   - Resolves primary Category and DefinedTermSet URLs for schema consumers
-  - Rewrites term permalinks when category-in-URL mode is enabled
+  - Rewrites term permalinks when category-in-URL mode is enabled; never emits synthetic segments
+  - Rejects reserved Category slugs (`category`, `term-category`, `uncategorized`, current term base)
+  - Maintains `cat_term_permalink_redirects` (capped 301 map served only on 404s)
 - `assets/js/glossary-hovercards.js`
   - Manages interaction states (`is-visible`, `is-pinned`)
   - Handles click, hover, focus, and escape-close logic
@@ -62,7 +67,10 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
 - Option: `cat_term_slug` (rewrite base; default `term`)
 - Option: `cat_categories_enabled` (boolean; default `false`)
 - Option: `cat_term_permalink_include_category` (boolean; default `false`; effective only when categories enabled)
-- Taxonomy: `cat-term-category` (registered only when categories enabled; UI labels Category / Categories)
+- Taxonomy: `cat-term-category` (registered only when categories enabled; UI labels Category / Categories; archive base `{term-slug}/term-category/`)
+- Meta key: `cat_primary_category` (integer term ID; explicit primary Category for permalinks and schema)
+- Option: `cat_term_permalink_redirects` (old path => new path map; max 200 entries FIFO; not autoloaded)
+- Option: `cat_rewrite_flush_needed` (transient-style flag; autoloaded only while set)
 
 ## Content flow
 

@@ -20,9 +20,15 @@ This document defines live behavior contracts that must remain true unless a cha
 - Rewrite base slug defaults to `term` and is configurable via `cat_term_slug` (Term → Settings).
 - Defaults preserve `/term/{slug}/` permalinks until a site owner changes settings.
 - `cat_categories_enabled` defaults to false; when true, taxonomy `cat-term-category` registers with UI labels **Category** / **Categories** (never core `category`).
-- `cat_term_permalink_include_category` embeds the primary Category slug in term permalinks when categories are enabled; otherwise permalinks stay `/{term-slug}/{post-name}/`.
-- Rewrite rules flush only via deferred flag after structure options change — never on every `init` or admin page load.
+- Taxonomy capability map: `manage_terms`/`edit_terms`/`delete_terms` require `manage_options`; `assign_terms` requires `edit_posts`. Core `manage_categories` grants nothing on CAT Categories. REST term management follows the same map.
+- The primary Category is the explicit `cat_primary_category` post meta (integer term ID). Resolution order: valid meta pointing at an assigned Category → lowest assigned term ID (meta backfilled) → none. The meta self-heals when assignments change.
+- `cat_term_permalink_include_category` embeds the primary Category slug in term permalinks when categories are enabled; terms without a primary Category keep `/{term-slug}/{post-name}/` — synthetic segments (for example `uncategorized`) are never emitted.
+- Category archive base is `/{term-slug}/term-category/{category-slug}/`.
+- Reserved Category slugs are rejected on create and reverted on update: `category`, `term-category`, `uncategorized`, and the current term base slug.
+- Permalink-affecting changes (primary Category change, Category slug change, term base slug change, category-in-permalink toggle) record old-path → new-path entries in `cat_term_permalink_redirects` (capped at 200, FIFO). Requests that 404 against a recorded old path 301-redirect to the new URL.
+- Rewrite rules flush only via deferred flag after structure options change — never on every `init` or admin page load. The flag is autoloaded only while set and deleted after the flush.
 - Consumers must read structure settings through `Cat_Term_Settings` getters.
+- All glossary cache invalidation must go through `Cat_Glossary::clear_items_cache()`; no module may hardcode cache keys.
 - When a glossary term has a Category assigned, canonical DefinedTerm `inDefinedTermSet` uses that Category archive URL; otherwise it falls back to the glossary archive URL.
 - Category archive pages emit canonical `DefinedTermSet` schema (standalone and SEO transport adapters).
 
