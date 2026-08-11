@@ -26,10 +26,16 @@ class Cat_Term_Category {
 	const UNCATEGORIZED_SLUG = 'uncategorized';
 
 	/**
+	 * Post meta key storing the explicit primary Category term ID.
+	 */
+	const PRIMARY_META_KEY = 'cat_primary_category';
+
+	/**
 	 * Wire hooks.
 	 */
 	public function __construct() {
 		add_action( 'init', array( $this, 'register_taxonomy' ), 11 );
+		add_action( 'init', array( $this, 'register_primary_meta' ), 11 );
 		add_filter( 'post_type_link', array( $this, 'filter_term_permalink' ), 10, 2 );
 		add_action( 'created_' . self::TAXONOMY, array( $this, 'clear_glossary_cache' ) );
 		add_action( 'edited_' . self::TAXONOMY, array( $this, 'clear_glossary_cache' ) );
@@ -86,13 +92,51 @@ class Cat_Term_Category {
 					'hierarchical' => false,
 				),
 				'capabilities'      => array(
-					'manage_terms' => 'manage_categories',
-					'edit_terms'   => 'manage_categories',
-					'delete_terms' => 'manage_categories',
+					'manage_terms' => 'manage_options',
+					'edit_terms'   => 'manage_options',
+					'delete_terms' => 'manage_options',
 					'assign_terms' => 'edit_posts',
 				),
 			)
 		);
+	}
+
+	/**
+	 * Register the primary Category post meta when Categories are enabled.
+	 *
+	 * @return void
+	 */
+	public function register_primary_meta() {
+		if ( ! Cat_Term_Settings::are_categories_enabled() ) {
+			return;
+		}
+
+		register_post_meta(
+			Cat_Glossary_Admin::POST_TYPE,
+			self::PRIMARY_META_KEY,
+			array(
+				'type'              => 'integer',
+				'single'            => true,
+				'default'           => 0,
+				'show_in_rest'      => true,
+				'sanitize_callback' => 'absint',
+				'auth_callback'     => array( $this, 'can_edit_primary_meta' ),
+			)
+		);
+	}
+
+	/**
+	 * Restrict REST/meta writes to users who can edit the post.
+	 *
+	 * @param bool   $allowed  Whether access is already allowed.
+	 * @param string $meta_key Meta key.
+	 * @param int    $post_id  Post ID.
+	 * @param int    $user_id  User ID.
+	 * @return bool
+	 */
+	public function can_edit_primary_meta( $allowed, $meta_key, $post_id, $user_id ) {
+		unset( $allowed, $meta_key, $user_id );
+		return current_user_can( 'edit_post', $post_id );
 	}
 
 	/**
@@ -118,7 +162,12 @@ class Cat_Term_Category {
 	}
 
 	/**
-	 * Get primary Category for a glossary term post (first assigned).
+	 * Get the primary Category for a glossary term post.
+	 *
+	 * Resolution order:
+	 * 1. Explicit `cat_primary_category` meta pointing at an assigned Category.
+	 * 2. Deterministic fallback: lowest assigned term ID (meta is backfilled).
+	 * 3. Null when no Categories are assigned.
 	 *
 	 * @param int $post_id Term post ID.
 	 * @return \WP_Term|null
@@ -138,7 +187,21 @@ class Cat_Term_Category {
 			return null;
 		}
 
-		return $terms[0];
+		$assigned = array();
+		foreach ( $terms as $term ) {
+			$assigned[ (int) $term->term_id ] = $term;
+		}
+
+		$primary_id = absint( get_post_meta( $post_id, self::PRIMARY_META_KEY, true ) );
+		if ( $primary_id > 0 && isset( $assigned[ $primary_id ] ) ) {
+			return $assigned[ $primary_id ];
+		}
+
+		ksort( $assigned );
+		$fallback = reset( $assigned );
+		update_post_meta( $post_id, self::PRIMARY_META_KEY, (int) $fallback->term_id );
+
+		return $fallback;
 	}
 
 	/**
@@ -215,7 +278,8 @@ class Cat_Term_Category {
 	}
 
 	/**
-	 * Clear glossary cache when term↔category relationships change.
+	 * Clear glossary cache and re-validate primary meta when term↔category
+	 * relationships change.
 	 *
 	 * @param int    $object_id  Object ID.
 	 * @param array  $terms      Term IDs.
@@ -224,9 +288,49 @@ class Cat_Term_Category {
 	 * @return void
 	 */
 	public function maybe_clear_cache_on_object_terms( $object_id, $terms, $tt_ids, $taxonomy ) {
-		unset( $object_id, $terms, $tt_ids );
-		if ( self::TAXONOMY === $taxonomy ) {
-			$this->clear_glossary_cache();
+		unset( $terms, $tt_ids );
+		if ( self::TAXONOMY !== $taxonomy ) {
+			return;
 		}
+
+		$this->clear_glossary_cache();
+		self::sync_primary_category_meta( (int) $object_id );
+	}
+
+	/**
+	 * Keep `cat_primary_category` meta consistent with current assignments.
+	 *
+	 * Clears the meta when no Categories remain; backfills the lowest assigned
+	 * term ID when the stored primary is missing or no longer assigned.
+	 *
+	 * @param int $post_id Term post ID.
+	 * @return void
+	 */
+	public static function sync_primary_category_meta( $post_id ) {
+		$post_id = absint( $post_id );
+		if ( $post_id <= 0 || Cat_Glossary_Admin::POST_TYPE !== get_post_type( $post_id ) ) {
+			return;
+		}
+
+		$terms = get_the_terms( $post_id, self::TAXONOMY );
+		if ( empty( $terms ) || is_wp_error( $terms ) ) {
+			delete_post_meta( $post_id, self::PRIMARY_META_KEY );
+			return;
+		}
+
+		$assigned_ids = array_map(
+			static function ( $term ) {
+				return (int) $term->term_id;
+			},
+			$terms
+		);
+
+		$primary_id = absint( get_post_meta( $post_id, self::PRIMARY_META_KEY, true ) );
+		if ( $primary_id > 0 && in_array( $primary_id, $assigned_ids, true ) ) {
+			return;
+		}
+
+		sort( $assigned_ids );
+		update_post_meta( $post_id, self::PRIMARY_META_KEY, $assigned_ids[0] );
 	}
 }

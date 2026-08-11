@@ -906,6 +906,90 @@ cat_assert(
 	'Cache clear test failed: set_object_terms path must invalidate the glossary items cache.'
 );
 
+// Test 23: Category caps decoupled from core manage_categories.
+$phase2_saved_enabled = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, null );
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, true );
+$category_module_phase2 = new \ContextAuthorityToolkit\Cat_Term_Category();
+$category_module_phase2->register_taxonomy();
+$category_module_phase2->register_primary_meta();
+
+$phase2_tax = get_taxonomy( \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	$phase2_tax && 'manage_options' === $phase2_tax->cap->manage_terms && 'manage_options' === $phase2_tax->cap->edit_terms && 'manage_options' === $phase2_tax->cap->delete_terms,
+	'Category caps test failed: manage/edit/delete terms must map to manage_options.'
+);
+cat_assert(
+	$phase2_tax && 'edit_posts' === $phase2_tax->cap->assign_terms,
+	'Category caps test failed: assign_terms must map to edit_posts.'
+);
+cat_assert(
+	$phase2_tax && ! in_array( 'manage_categories', (array) $phase2_tax->cap, true ),
+	'Category caps test failed: taxonomy must not use core manage_categories.'
+);
+
+// Test 24: Primary Category meta is explicit, stable, and self-healing.
+cat_assert(
+	registered_meta_key_exists( 'post', \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE ),
+	'Primary category test failed: cat_primary_category meta must be registered for the term CPT.'
+);
+
+$primary_cat_a = wp_insert_term( 'Primary Alpha', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'primary-alpha' ) );
+$primary_cat_b = wp_insert_term( 'Primary Beta', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'primary-beta' ) );
+cat_assert(
+	! is_wp_error( $primary_cat_a ) && ! is_wp_error( $primary_cat_b ),
+	'Primary category test failed: could not create fixture Categories.'
+);
+$primary_cat_a_id = (int) $primary_cat_a['term_id'];
+$primary_cat_b_id = (int) $primary_cat_b['term_id'];
+$primary_low_id   = min( $primary_cat_a_id, $primary_cat_b_id );
+$primary_high_id  = max( $primary_cat_a_id, $primary_cat_b_id );
+
+$primary_post_id = cat_create_term( 'Primary Resolution', '<p>Primary resolution fixture.</p>' );
+$test_post_ids[] = $primary_post_id;
+wp_set_object_terms( $primary_post_id, array( $primary_cat_a_id, $primary_cat_b_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+
+// Explicit primary meta wins regardless of assignment order.
+update_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, $primary_high_id );
+$resolved_primary = \ContextAuthorityToolkit\Cat_Term_Category::get_primary_category( $primary_post_id );
+cat_assert(
+	$resolved_primary && $primary_high_id === (int) $resolved_primary->term_id,
+	'Primary category test failed: explicit primary meta must win over assignment order.'
+);
+
+// Invalid primary meta falls back to lowest assigned term ID and backfills.
+update_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, 999999 );
+$resolved_fallback = \ContextAuthorityToolkit\Cat_Term_Category::get_primary_category( $primary_post_id );
+cat_assert(
+	$resolved_fallback && $primary_low_id === (int) $resolved_fallback->term_id,
+	'Primary category test failed: invalid primary must fall back to lowest assigned term ID.'
+);
+cat_assert(
+	$primary_low_id === absint( get_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, true ) ),
+	'Primary category test failed: fallback resolution must backfill the primary meta.'
+);
+
+// Removing the stored primary re-syncs meta to a remaining assignment.
+wp_set_object_terms( $primary_post_id, array( $primary_high_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	$primary_high_id === absint( get_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, true ) ),
+	'Primary category test failed: removing the primary assignment must re-point meta at a remaining Category.'
+);
+
+// Removing all Categories clears the primary meta.
+wp_set_object_terms( $primary_post_id, array(), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	'' === (string) get_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, true ),
+	'Primary category test failed: clearing all Categories must delete the primary meta.'
+);
+
+wp_delete_term( $primary_cat_a_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+wp_delete_term( $primary_cat_b_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+if ( null === $phase2_saved_enabled ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, $phase2_saved_enabled );
+}
+
 wp_reset_postdata();
 foreach ( $test_post_ids as $test_post_id ) {
 	wp_delete_post( (int) $test_post_id, true );
