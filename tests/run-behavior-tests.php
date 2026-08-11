@@ -982,6 +982,99 @@ cat_assert(
 	'Primary category test failed: clearing all Categories must delete the primary meta.'
 );
 
+// Test 25: Permalink integrity — no synthetic segments, reserved slugs, redirects.
+$phase3_saved_include = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, null );
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, true );
+delete_option( \ContextAuthorityToolkit\Cat_Term_Category::REDIRECTS_OPTION );
+
+$admin_for_phase3 = new \ContextAuthorityToolkit\Cat_Glossary_Admin();
+$admin_for_phase3->register_post_type();
+$category_module_phase2->register_taxonomy();
+flush_rewrite_rules( false );
+
+// No primary Category assigned: permalink must be single-segment, no synthetic slug.
+$uncat_permalink = get_permalink( $primary_post_id );
+cat_assert(
+	is_string( $uncat_permalink ) && false === strpos( $uncat_permalink, 'uncategorized' ),
+	'Permalink integrity test failed: no synthetic uncategorized segment allowed.'
+);
+cat_assert(
+	is_string( $uncat_permalink ) && false === strpos( $uncat_permalink, '%' ) && false === strpos( (string) wp_parse_url( $uncat_permalink, PHP_URL_PATH ), '//' ),
+	'Permalink integrity test failed: category-less permalink must collapse cleanly to /base/name/.'
+);
+
+// Assign Categories; deterministic primary appears in the permalink.
+wp_set_object_terms( $primary_post_id, array( $primary_cat_a_id, $primary_cat_b_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+$low_slug  = get_term( $primary_low_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY )->slug;
+$high_slug = get_term( $primary_high_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY )->slug;
+$with_primary_permalink = get_permalink( $primary_post_id );
+cat_assert(
+	is_string( $with_primary_permalink ) && false !== strpos( $with_primary_permalink, '/' . $low_slug . '/' ),
+	'Permalink integrity test failed: permalink must contain the primary Category slug.'
+);
+
+// Changing the primary updates the permalink and records a redirect entry.
+update_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, $primary_high_id );
+$after_primary_change = get_permalink( $primary_post_id );
+cat_assert(
+	is_string( $after_primary_change ) && false !== strpos( $after_primary_change, '/' . $high_slug . '/' ),
+	'Permalink integrity test failed: changing primary must update the permalink.'
+);
+
+$phase3_post_name  = (string) get_post_field( 'post_name', $primary_post_id );
+$phase3_base       = \ContextAuthorityToolkit\Cat_Term_Settings::get_term_slug();
+$expected_old_path = (string) wp_parse_url( home_url( '/' . $phase3_base . '/' . $low_slug . '/' . $phase3_post_name . '/' ), PHP_URL_PATH );
+$expected_new_path = (string) wp_parse_url( home_url( '/' . $phase3_base . '/' . $high_slug . '/' . $phase3_post_name . '/' ), PHP_URL_PATH );
+$redirect_map      = get_option( \ContextAuthorityToolkit\Cat_Term_Category::REDIRECTS_OPTION, array() );
+cat_assert(
+	is_array( $redirect_map ) && isset( $redirect_map[ $expected_old_path ] ) && $expected_new_path === $redirect_map[ $expected_old_path ],
+	'Permalink integrity test failed: primary change must record old-path redirect to new path.'
+);
+
+// Reserved Category slugs are rejected on create and reverted on update.
+$reserved_insert = wp_insert_term( 'Category', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	is_wp_error( $reserved_insert ) && 'cat_reserved_category_slug' === $reserved_insert->get_error_code(),
+	'Permalink integrity test failed: reserved slug category must be rejected on insert.'
+);
+$reserved_explicit = wp_insert_term( 'Perfectly Fine Name', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'term-category' ) );
+cat_assert(
+	is_wp_error( $reserved_explicit ),
+	'Permalink integrity test failed: reserved slug term-category must be rejected on insert.'
+);
+wp_update_term( $primary_cat_a_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'uncategorized' ) );
+cat_assert(
+	'uncategorized' !== get_term( $primary_cat_a_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY )->slug,
+	'Permalink integrity test failed: reserved slug must be reverted on update.'
+);
+
+// Taxonomy archive base is /term-category/, not /category/.
+$phase3_archive_link = get_term_link( $primary_cat_a_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	! is_wp_error( $phase3_archive_link ) && false !== strpos( (string) $phase3_archive_link, '/term-category/' ),
+	'Permalink integrity test failed: taxonomy archive base must be term-category.'
+);
+cat_assert(
+	! is_wp_error( $phase3_archive_link ) && false === strpos( (string) $phase3_archive_link, '/' . $phase3_base . '/category/' ),
+	'Permalink integrity test failed: taxonomy archive base must not be bare category.'
+);
+
+// No-category single-segment rewrite rule exists while include mode is on.
+$phase3_rules = get_option( 'rewrite_rules' );
+cat_assert(
+	is_array( $phase3_rules ) && isset( $phase3_rules[ '^' . $phase3_base . '/([^/]+)/?$' ] ),
+	'Permalink integrity test failed: single-segment rewrite rule must exist in include mode.'
+);
+
+// Cleanup Phase 3 state.
+wp_set_object_terms( $primary_post_id, array(), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+delete_option( \ContextAuthorityToolkit\Cat_Term_Category::REDIRECTS_OPTION );
+if ( null === $phase3_saved_include ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, $phase3_saved_include );
+}
+
 wp_delete_term( $primary_cat_a_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
 wp_delete_term( $primary_cat_b_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
 if ( null === $phase2_saved_enabled ) {
@@ -989,6 +1082,8 @@ if ( null === $phase2_saved_enabled ) {
 } else {
 	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, $phase2_saved_enabled );
 }
+$admin_for_phase3->register_post_type();
+flush_rewrite_rules( false );
 
 wp_reset_postdata();
 foreach ( $test_post_ids as $test_post_id ) {

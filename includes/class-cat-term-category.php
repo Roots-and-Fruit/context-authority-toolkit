@@ -21,14 +21,24 @@ class Cat_Term_Category {
 	const TAXONOMY = 'cat-term-category';
 
 	/**
-	 * Fallback permalink segment when category-in-URL is on but none assigned.
-	 */
-	const UNCATEGORIZED_SLUG = 'uncategorized';
-
-	/**
 	 * Post meta key storing the explicit primary Category term ID.
 	 */
 	const PRIMARY_META_KEY = 'cat_primary_category';
+
+	/**
+	 * Taxonomy rewrite segment appended to the term base slug.
+	 */
+	const REWRITE_SEGMENT = 'term-category';
+
+	/**
+	 * Option storing the legacy-permalink redirect map (old path => new path).
+	 */
+	const REDIRECTS_OPTION = 'cat_term_permalink_redirects';
+
+	/**
+	 * Maximum redirect map entries (FIFO eviction).
+	 */
+	const REDIRECTS_MAX = 200;
 
 	/**
 	 * Wire hooks.
@@ -41,6 +51,13 @@ class Cat_Term_Category {
 		add_action( 'edited_' . self::TAXONOMY, array( $this, 'clear_glossary_cache' ) );
 		add_action( 'delete_' . self::TAXONOMY, array( $this, 'clear_glossary_cache' ) );
 		add_action( 'set_object_terms', array( $this, 'maybe_clear_cache_on_object_terms' ), 10, 4 );
+		add_filter( 'pre_insert_term', array( $this, 'reject_reserved_slug_on_insert' ), 10, 3 );
+		add_filter( 'wp_update_term_data', array( $this, 'guard_reserved_slug_on_update' ), 10, 4 );
+		add_filter( 'update_post_metadata', array( $this, 'observe_primary_meta_update' ), 10, 4 );
+		add_filter( 'delete_post_metadata', array( $this, 'observe_primary_meta_delete' ), 10, 3 );
+		add_action( 'template_redirect', array( $this, 'maybe_redirect_legacy_permalink' ), 0 );
+		add_action( 'update_option_' . Cat_Term_Settings::OPTION_TERM_SLUG, array( $this, 'record_redirects_on_slug_option_change' ), 10, 2 );
+		add_action( 'update_option_' . Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, array( $this, 'record_redirects_on_include_toggle' ), 10, 2 );
 	}
 
 	/**
@@ -87,7 +104,7 @@ class Cat_Term_Category {
 				'show_in_rest'      => true,
 				'hierarchical'      => false,
 				'rewrite'           => array(
-					'slug'         => $term_slug . '/category',
+					'slug'         => $term_slug . '/' . self::REWRITE_SEGMENT,
 					'with_front'   => false,
 					'hierarchical' => false,
 				),
@@ -156,9 +173,14 @@ class Cat_Term_Category {
 		}
 
 		$category = self::get_primary_category( $post->ID );
-		$slug     = $category ? $category->slug : self::UNCATEGORIZED_SLUG;
+		if ( $category ) {
+			return str_replace( '%' . self::TAXONOMY . '%', $category->slug, $post_link );
+		}
 
-		return str_replace( '%' . self::TAXONOMY . '%', $slug, $post_link );
+		// No primary Category: drop the segment entirely (never emit a synthetic slug).
+		$post_link = str_replace( '%' . self::TAXONOMY . '%/', '', $post_link );
+
+		return str_replace( '%' . self::TAXONOMY . '%', '', $post_link );
 	}
 
 	/**
@@ -266,6 +288,381 @@ class Cat_Term_Category {
 		}
 
 		return $schema;
+	}
+
+	/**
+	 * Slugs that Categories may never use (URL collision protection).
+	 *
+	 * @return string[]
+	 */
+	public static function get_reserved_category_slugs() {
+		return array(
+			'category',
+			self::REWRITE_SEGMENT,
+			'uncategorized',
+			Cat_Term_Settings::get_term_slug(),
+		);
+	}
+
+	/**
+	 * Reject reserved slugs when a Category is created.
+	 *
+	 * @param string|\WP_Error $term     Term name (or error from earlier filter).
+	 * @param string           $taxonomy Taxonomy slug.
+	 * @param array            $args     Term creation args.
+	 * @return string|\WP_Error
+	 */
+	public function reject_reserved_slug_on_insert( $term, $taxonomy, $args = array() ) {
+		if ( is_wp_error( $term ) || self::TAXONOMY !== $taxonomy ) {
+			return $term;
+		}
+
+		$requested = '';
+		if ( is_array( $args ) && ! empty( $args['slug'] ) && is_string( $args['slug'] ) ) {
+			$requested = sanitize_title( $args['slug'] );
+		}
+		if ( '' === $requested && is_string( $term ) ) {
+			$requested = sanitize_title( $term );
+		}
+
+		if ( in_array( $requested, self::get_reserved_category_slugs(), true ) ) {
+			return new \WP_Error(
+				'cat_reserved_category_slug',
+				sprintf(
+					/* translators: %s: rejected slug */
+					__( 'The slug "%s" is reserved for glossary URLs. Please choose a different Category slug.', 'context-authority-toolkit' ),
+					$requested
+				)
+			);
+		}
+
+		return $term;
+	}
+
+	/**
+	 * Keep reserved slugs out of Category updates (reverts to current slug).
+	 *
+	 * Also records a taxonomy-archive redirect when a Category slug changes.
+	 *
+	 * @param array  $data     Sanitized term data destined for the database.
+	 * @param int    $term_id  Term ID.
+	 * @param string $taxonomy Taxonomy slug.
+	 * @param array  $args     Update args.
+	 * @return array
+	 */
+	public function guard_reserved_slug_on_update( $data, $term_id, $taxonomy, $args ) {
+		unset( $args );
+		if ( self::TAXONOMY !== $taxonomy || ! is_array( $data ) || empty( $data['slug'] ) ) {
+			return $data;
+		}
+
+		$current = get_term( $term_id, self::TAXONOMY );
+		if ( ! ( $current instanceof \WP_Term ) ) {
+			return $data;
+		}
+
+		if ( in_array( $data['slug'], self::get_reserved_category_slugs(), true ) ) {
+			$data['slug'] = $current->slug;
+			return $data;
+		}
+
+		if ( $data['slug'] !== $current->slug ) {
+			$base = Cat_Term_Settings::get_term_slug();
+			self::record_permalink_redirect(
+				self::build_public_path( $base . '/' . self::REWRITE_SEGMENT . '/' . $current->slug ),
+				self::build_public_path( $base . '/' . self::REWRITE_SEGMENT . '/' . $data['slug'] )
+			);
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Build a home-relative public path (includes subdirectory installs).
+	 *
+	 * @param string $segments Path segments without leading/trailing slashes.
+	 * @return string
+	 */
+	private static function build_public_path( $segments ) {
+		$segments = trim( (string) $segments, '/' );
+		if ( '' === $segments ) {
+			return '';
+		}
+
+		return (string) wp_parse_url( home_url( '/' . $segments . '/' ), PHP_URL_PATH );
+	}
+
+	/**
+	 * Build the public path for a glossary term post.
+	 *
+	 * @param string $post_name     Post slug.
+	 * @param string $category_slug Primary Category slug ('' for none).
+	 * @param string $base          Optional term base override (defaults to setting).
+	 * @return string
+	 */
+	private static function build_term_path( $post_name, $category_slug = '', $base = '' ) {
+		if ( '' === $base ) {
+			$base = Cat_Term_Settings::get_term_slug();
+		}
+
+		$segments = $base;
+		if ( '' !== $category_slug ) {
+			$segments .= '/' . $category_slug;
+		}
+
+		return self::build_public_path( $segments . '/' . $post_name );
+	}
+
+	/**
+	 * Record an old-path => new-path redirect entry (FIFO, capped).
+	 *
+	 * @param string $old_path Old public path.
+	 * @param string $new_path New public path.
+	 * @return void
+	 */
+	public static function record_permalink_redirect( $old_path, $new_path ) {
+		$old_path = (string) $old_path;
+		$new_path = (string) $new_path;
+		if ( '' === $old_path || '' === $new_path || $old_path === $new_path ) {
+			return;
+		}
+
+		$map = get_option( self::REDIRECTS_OPTION, array() );
+		if ( ! is_array( $map ) ) {
+			$map = array();
+		}
+
+		// Re-point existing chains at the newest destination, then append.
+		foreach ( $map as $from => $to ) {
+			if ( $to === $old_path ) {
+				$map[ $from ] = $new_path;
+			}
+		}
+		unset( $map[ $new_path ] );
+		$map[ $old_path ] = $new_path;
+
+		if ( count( $map ) > self::REDIRECTS_MAX ) {
+			$map = array_slice( $map, -self::REDIRECTS_MAX, null, true );
+		}
+
+		update_option( self::REDIRECTS_OPTION, $map, false );
+	}
+
+	/**
+	 * 301-redirect requests that hit a recorded legacy permalink.
+	 *
+	 * Only consulted on 404s, so the map costs nothing on resolving requests.
+	 *
+	 * @return void
+	 */
+	public function maybe_redirect_legacy_permalink() {
+		if ( ! is_404() ) {
+			return;
+		}
+
+		$map = get_option( self::REDIRECTS_OPTION, array() );
+		if ( empty( $map ) || ! is_array( $map ) ) {
+			return;
+		}
+
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) ) : '';
+		$request     = (string) wp_parse_url( $request_uri, PHP_URL_PATH );
+		if ( '' === $request ) {
+			return;
+		}
+
+		$request = trailingslashit( $request );
+		if ( ! isset( $map[ $request ] ) ) {
+			return;
+		}
+
+		wp_safe_redirect( home_url( $map[ $request ] ), 301 );
+		exit;
+	}
+
+	/**
+	 * Observe primary-meta updates and record permalink redirects.
+	 *
+	 * Runs as a pass-through on the update_post_metadata short-circuit filter
+	 * so both editor (REST) writes and internal syncs are covered.
+	 *
+	 * @param null|bool $check      Short-circuit value from earlier filters.
+	 * @param int       $object_id  Post ID.
+	 * @param string    $meta_key   Meta key.
+	 * @param mixed     $meta_value New meta value.
+	 * @return null|bool
+	 */
+	public function observe_primary_meta_update( $check, $object_id, $meta_key, $meta_value ) {
+		if ( self::PRIMARY_META_KEY !== $meta_key ) {
+			return $check;
+		}
+
+		$old_id = absint( get_post_meta( (int) $object_id, self::PRIMARY_META_KEY, true ) );
+		$new_id = absint( $meta_value );
+		if ( $old_id !== $new_id ) {
+			$this->record_primary_change_redirect( (int) $object_id, $old_id, $new_id );
+		}
+
+		return $check;
+	}
+
+	/**
+	 * Observe primary-meta deletion (all Categories removed) for redirects.
+	 *
+	 * @param null|bool $delete    Short-circuit value from earlier filters.
+	 * @param int       $object_id Post ID.
+	 * @param string    $meta_key  Meta key.
+	 * @return null|bool
+	 */
+	public function observe_primary_meta_delete( $delete, $object_id, $meta_key ) {
+		if ( self::PRIMARY_META_KEY !== $meta_key ) {
+			return $delete;
+		}
+
+		$old_id = absint( get_post_meta( (int) $object_id, self::PRIMARY_META_KEY, true ) );
+		if ( $old_id > 0 ) {
+			$this->record_primary_change_redirect( (int) $object_id, $old_id, 0 );
+		}
+
+		return $delete;
+	}
+
+	/**
+	 * Record a redirect for a post whose primary Category changed.
+	 *
+	 * @param int $post_id Post ID.
+	 * @param int $old_id  Previous primary term ID (0 for none).
+	 * @param int $new_id  New primary term ID (0 for none).
+	 * @return void
+	 */
+	private function record_primary_change_redirect( $post_id, $old_id, $new_id ) {
+		if ( ! Cat_Term_Settings::should_include_category_in_permalink() ) {
+			return;
+		}
+
+		if ( Cat_Glossary_Admin::POST_TYPE !== get_post_type( $post_id ) || 'publish' !== get_post_status( $post_id ) ) {
+			return;
+		}
+
+		$post_name = (string) get_post_field( 'post_name', $post_id );
+		if ( '' === $post_name ) {
+			return;
+		}
+
+		self::record_permalink_redirect(
+			self::build_term_path( $post_name, self::get_category_slug_by_id( $old_id ) ),
+			self::build_term_path( $post_name, self::get_category_slug_by_id( $new_id ) )
+		);
+	}
+
+	/**
+	 * Resolve a Category slug from a term ID.
+	 *
+	 * @param int $term_id Term ID.
+	 * @return string Empty string when the term does not exist.
+	 */
+	private static function get_category_slug_by_id( $term_id ) {
+		if ( $term_id <= 0 ) {
+			return '';
+		}
+
+		$term = get_term( $term_id, self::TAXONOMY );
+		if ( ! ( $term instanceof \WP_Term ) ) {
+			return '';
+		}
+
+		return (string) $term->slug;
+	}
+
+	/**
+	 * Record redirects for all published terms when the base slug changes,
+	 * and re-point existing map targets at the new base.
+	 *
+	 * @param mixed $old_value Previous option value.
+	 * @param mixed $value     New option value.
+	 * @return void
+	 */
+	public function record_redirects_on_slug_option_change( $old_value, $value ) {
+		$old_base = Cat_Term_Settings::sanitize_term_slug( $old_value );
+		$new_base = Cat_Term_Settings::sanitize_term_slug( $value );
+		if ( $old_base === $new_base ) {
+			return;
+		}
+
+		// Existing map targets under the old base would now 404; remap them first.
+		$map = get_option( self::REDIRECTS_OPTION, array() );
+		if ( is_array( $map ) && ! empty( $map ) ) {
+			$old_prefix = self::build_public_path( $old_base );
+			$new_prefix = self::build_public_path( $new_base );
+			foreach ( $map as $from => $to ) {
+				if ( 0 === strpos( (string) $to, $old_prefix ) ) {
+					$map[ $from ] = $new_prefix . substr( (string) $to, strlen( $old_prefix ) );
+				}
+			}
+			update_option( self::REDIRECTS_OPTION, $map, false );
+		}
+
+		$include = Cat_Term_Settings::should_include_category_in_permalink();
+		foreach ( self::get_published_term_posts() as $term_post ) {
+			$category_slug = '';
+			if ( $include ) {
+				$primary       = self::get_primary_category( $term_post->ID );
+				$category_slug = $primary ? (string) $primary->slug : '';
+			}
+
+			self::record_permalink_redirect(
+				self::build_term_path( $term_post->post_name, $category_slug, $old_base ),
+				self::build_term_path( $term_post->post_name, $category_slug, $new_base )
+			);
+		}
+	}
+
+	/**
+	 * Record redirects for all published terms when category-in-permalink toggles.
+	 *
+	 * @param mixed $old_value Previous option value.
+	 * @param mixed $value     New option value.
+	 * @return void
+	 */
+	public function record_redirects_on_include_toggle( $old_value, $value ) {
+		if ( ! Cat_Term_Settings::are_categories_enabled() ) {
+			return;
+		}
+
+		$old_include = Cat_Term_Settings::sanitize_boolean_option( $old_value );
+		$new_include = Cat_Term_Settings::sanitize_boolean_option( $value );
+		if ( $old_include === $new_include ) {
+			return;
+		}
+
+		foreach ( self::get_published_term_posts() as $term_post ) {
+			$primary       = self::get_primary_category( $term_post->ID );
+			$category_slug = $primary ? (string) $primary->slug : '';
+			if ( '' === $category_slug ) {
+				continue; // Path is identical with or without the category segment.
+			}
+
+			self::record_permalink_redirect(
+				self::build_term_path( $term_post->post_name, $old_include ? $category_slug : '' ),
+				self::build_term_path( $term_post->post_name, $new_include ? $category_slug : '' )
+			);
+		}
+	}
+
+	/**
+	 * Fetch published glossary term posts for redirect recording (capped).
+	 *
+	 * @return \WP_Post[]
+	 */
+	private static function get_published_term_posts() {
+		return get_posts(
+			array(
+				'post_type'        => Cat_Glossary_Admin::POST_TYPE,
+				'post_status'      => 'publish',
+				'numberposts'      => self::REDIRECTS_MAX,
+				'suppress_filters' => false,
+			)
+		);
 	}
 
 	/**
