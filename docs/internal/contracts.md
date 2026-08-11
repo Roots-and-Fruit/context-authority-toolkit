@@ -14,6 +14,16 @@ This document defines live behavior contracts that must remain true unless a cha
 - When `cat_disable_autolinking` is enabled for a post, no glossary auto-linking is applied in that post context.
 - Term single content never auto-links its own term title; other glossary terms may still be linked.
 
+## Term structure / permalink contract
+
+- CPT post type key remains `term`.
+- Rewrite base slug defaults to `term` and is configurable via `cat_term_slug` (Term → Settings).
+- Defaults preserve `/term/{slug}/` permalinks until a site owner changes settings.
+- `cat_categories_enabled` defaults to false; Category taxonomy is not registered until a follow-up ships.
+- `cat_term_permalink_include_category` is stored but does not alter rewrite structure until Categories exist; getters report false when categories are disabled.
+- Rewrite rules flush only when slug or permalink-include options actually change — never on every `init` or admin page load.
+- Consumers must read structure settings through `Cat_Term_Settings` getters.
+
 ## Markup and accessibility contract
 
 - Wrapped term renders as a button trigger inside `.cat-glossary-item-container`.

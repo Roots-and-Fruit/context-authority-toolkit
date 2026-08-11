@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once ABSPATH . 'wp-admin/includes/user.php';
 
-if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) ) {
+if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) ) {
 	echo "Plugin classes are unavailable. Ensure plugin is active before running tests.\n";
 	exit( 1 );
 }
@@ -546,6 +546,197 @@ $rank_math_node     = end( $rank_math_filtered['@graph'] );
 cat_assert(
 	! empty( $rank_math_node['sameAs'] ) && ! empty( $rank_math_node['citation'] ),
 	'SEO Peacekeeper test failed: Rank Math adapter should keep sameAs and citation data.'
+);
+
+// Test 16: Term settings defaults and sanitizers.
+$saved_term_slug         = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG, null );
+$saved_categories        = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, null );
+$saved_permalink_include = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, null );
+
+delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG );
+delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED );
+delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY );
+
+cat_assert(
+	'term' === \ContextAuthorityToolkit\Cat_Term_Settings::get_term_slug(),
+	'Term settings test failed: default term slug must be term.'
+);
+cat_assert(
+	false === \ContextAuthorityToolkit\Cat_Term_Settings::are_categories_enabled(),
+	'Term settings test failed: categories must default to disabled.'
+);
+cat_assert(
+	false === \ContextAuthorityToolkit\Cat_Term_Settings::should_include_category_in_permalink(),
+	'Term settings test failed: permalink category include must default to false.'
+);
+
+$sanitized_invalid_slug = \ContextAuthorityToolkit\Cat_Term_Settings::sanitize_term_slug( 'Foo Bar!!' );
+cat_assert(
+	'foo-bar' === $sanitized_invalid_slug,
+	'Term settings test failed: invalid slug should sanitize to foo-bar, got: ' . $sanitized_invalid_slug
+);
+cat_assert(
+	'term' === \ContextAuthorityToolkit\Cat_Term_Settings::sanitize_term_slug( '' ),
+	'Term settings test failed: empty slug must fall back to term.'
+);
+cat_assert(
+	'term' === \ContextAuthorityToolkit\Cat_Term_Settings::sanitize_term_slug( array( 'bad' ) ),
+	'Term settings test failed: non-string slug must fall back to term.'
+);
+
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG, 'glossary' );
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, true );
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, true );
+
+cat_assert(
+	'glossary' === \ContextAuthorityToolkit\Cat_Term_Settings::get_term_slug(),
+	'Term settings test failed: getter must reflect stored slug.'
+);
+cat_assert(
+	true === \ContextAuthorityToolkit\Cat_Term_Settings::are_categories_enabled(),
+	'Term settings test failed: getter must reflect categories enabled.'
+);
+cat_assert(
+	true === \ContextAuthorityToolkit\Cat_Term_Settings::should_include_category_in_permalink(),
+	'Term settings test failed: getter must reflect permalink include when categories enabled.'
+);
+
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, false );
+cat_assert(
+	false === \ContextAuthorityToolkit\Cat_Term_Settings::should_include_category_in_permalink(),
+	'Term settings test failed: permalink include must be false when categories are disabled.'
+);
+
+if ( null === $saved_term_slug ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG, $saved_term_slug );
+}
+if ( null === $saved_categories ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, $saved_categories );
+}
+if ( null === $saved_permalink_include ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, $saved_permalink_include );
+}
+
+// Test 17: Term → Settings submenu is registered under the term CPT menu.
+global $submenu;
+if ( ! is_array( $submenu ) ) {
+	$submenu = array();
+}
+do_action( 'admin_menu' );
+$term_parent     = 'edit.php?post_type=' . \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE;
+$settings_found  = false;
+$settings_cap_ok = false;
+if ( isset( $submenu[ $term_parent ] ) && is_array( $submenu[ $term_parent ] ) ) {
+	foreach ( $submenu[ $term_parent ] as $item ) {
+		if ( isset( $item[2] ) && \ContextAuthorityToolkit\Cat_Term_Settings::PAGE_SLUG === $item[2] ) {
+			$settings_found = true;
+			$settings_cap_ok = isset( $item[1] ) && 'manage_options' === $item[1];
+			break;
+		}
+	}
+}
+cat_assert(
+	$settings_found,
+	'Term settings test failed: Settings submenu must be registered under Term admin menu.'
+);
+cat_assert(
+	$settings_cap_ok,
+	'Term settings test failed: Settings submenu must require manage_options.'
+);
+
+$options_parent_has_term_settings = false;
+if ( isset( $submenu['options-general.php'] ) && is_array( $submenu['options-general.php'] ) ) {
+	foreach ( $submenu['options-general.php'] as $item ) {
+		if ( isset( $item[2] ) && \ContextAuthorityToolkit\Cat_Term_Settings::PAGE_SLUG === $item[2] ) {
+			$options_parent_has_term_settings = true;
+			break;
+		}
+	}
+}
+cat_assert(
+	! $options_parent_has_term_settings,
+	'Term settings test failed: Term Settings must not appear under Settings → General.'
+);
+
+// Test 18: CPT rewrite slug follows Cat_Term_Settings and restores cleanly.
+$rewrite_saved_slug = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG, null );
+delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG );
+
+$admin_for_rewrite = new \ContextAuthorityToolkit\Cat_Glossary_Admin();
+$admin_for_rewrite->register_post_type();
+flush_rewrite_rules( false );
+
+$default_pto = get_post_type_object( \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE );
+cat_assert(
+	$default_pto && isset( $default_pto->rewrite['slug'] ) && 'term' === $default_pto->rewrite['slug'],
+	'Term settings test failed: default CPT rewrite slug must be term.'
+);
+
+$rewrite_term_id = cat_create_term( 'Rewrite Probe Default', 'Default rewrite body.' );
+$test_post_ids[] = $rewrite_term_id;
+$default_permalink = get_permalink( $rewrite_term_id );
+cat_assert(
+	is_string( $default_permalink ) && false !== strpos( $default_permalink, '/term/' ),
+	'Term settings test failed: default term permalink must contain /term/.'
+);
+
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG, 'glossary' );
+$admin_for_rewrite->register_post_type();
+flush_rewrite_rules( false );
+
+$custom_pto = get_post_type_object( \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE );
+cat_assert(
+	$custom_pto && isset( $custom_pto->rewrite['slug'] ) && 'glossary' === $custom_pto->rewrite['slug'],
+	'Term settings test failed: CPT rewrite slug must follow configured glossary slug.'
+);
+
+$custom_term_id = cat_create_term( 'Rewrite Probe Custom', 'Custom rewrite body.' );
+$test_post_ids[] = $custom_term_id;
+$custom_permalink = get_permalink( $custom_term_id );
+cat_assert(
+	is_string( $custom_permalink ) && false !== strpos( $custom_permalink, '/glossary/' ),
+	'Term settings test failed: custom term permalink must contain /glossary/.'
+);
+cat_assert(
+	\ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE === get_post_type( $custom_term_id ),
+	'Term settings test failed: CPT post type key must remain term.'
+);
+
+// Saving permalink-include must not break CPT registration.
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, true );
+$admin_for_rewrite->register_post_type();
+$after_permalink_opt = get_post_type_object( \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE );
+cat_assert(
+	$after_permalink_opt && isset( $after_permalink_opt->rewrite['slug'] ) && 'glossary' === $after_permalink_opt->rewrite['slug'],
+	'Term settings test failed: saving permalink-include must not break CPT rewrite registration.'
+);
+
+if ( null === $rewrite_saved_slug ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_TERM_SLUG, $rewrite_saved_slug );
+}
+delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY );
+$admin_for_rewrite->register_post_type();
+flush_rewrite_rules( false );
+
+// Test 19: Settings assets enqueue only on Term Settings screen.
+$settings_for_assets = new \ContextAuthorityToolkit\Cat_Term_Settings();
+$settings_for_assets->enqueue_settings_assets( 'edit.php' );
+cat_assert(
+	! wp_script_is( 'cat-term-settings', 'enqueued' ),
+	'Term settings test failed: settings script must not enqueue on unrelated admin screens.'
+);
+$settings_for_assets->enqueue_settings_assets( \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE . '_page_' . \ContextAuthorityToolkit\Cat_Term_Settings::PAGE_SLUG );
+cat_assert(
+	wp_script_is( 'cat-term-settings', 'enqueued' ),
+	'Term settings test failed: settings script must enqueue on Term Settings screen.'
 );
 
 wp_reset_postdata();

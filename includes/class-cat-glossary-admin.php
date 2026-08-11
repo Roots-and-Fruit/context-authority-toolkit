@@ -89,7 +89,7 @@ class Cat_Glossary_Admin {
 				'menu_icon'    => add_query_arg( 'ver', CAT_TOOLKIT_VERSION, CAT_TOOLKIT_URL . 'assets/images/term-icon.svg' ),
 				'hierarchical' => false,
 				'rewrite'      => array(
-					'slug'       => self::POST_TYPE,
+					'slug'       => Cat_Term_Settings::get_term_slug(),
 					'with_front' => false,
 				),
 				'supports'     => array( 'title', 'editor', 'excerpt', 'author', 'revisions', 'custom-fields' ),

@@ -32,13 +32,21 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Adds semantic microdata wrappers (`aria-labelledby` + `dfn` id linkage) and read-aloud sanitization pipeline
 - `includes/class-cat-glossary-hovercards.php`
   - Enqueues frontend CSS/JS assets
+- `includes/class-cat-term-settings.php`
+  - Owns Term → Settings screen under the `term` CPT menu (not Settings → General)
+  - Options: `cat_term_slug`, `cat_categories_enabled`, `cat_term_permalink_include_category`
+  - Static getters are the only intended read path for slug/category/permalink consumers
+  - Flushes rewrite rules only when slug or permalink-include options actually change
+  - Enqueues `assets/js/term-settings.js` only on the Term Settings admin screen
 - `assets/js/glossary-hovercards.js`
   - Manages interaction states (`is-visible`, `is-pinned`)
   - Handles click, hover, focus, and escape-close logic
+- `assets/js/term-settings.js`
+  - Progressive-enhancement preview and Categories → permalink control toggle
 
 ## Data model
 
-- CPT: `term`
+- CPT: `term` (post type key is fixed; rewrite base slug is configurable)
 - Post content: block-editor single term page content
 - Meta key: `cat_alternatives` (array of alternate names)
 - Meta key: `cat_tooltip_content` (plain-text tooltip body with line breaks)
@@ -47,6 +55,9 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
 - Meta key: `cat_sources` (array of citation rows with url/title/publisher/date)
 - Option: `cat_schema_output_mode` (`auto|standalone|off`)
 - Option: `cat_breadcrumb_integration` (boolean)
+- Option: `cat_term_slug` (rewrite base; default `term`)
+- Option: `cat_categories_enabled` (boolean; default `false` — taxonomy UI not shipped yet)
+- Option: `cat_term_permalink_include_category` (boolean; default `false`; effective only when categories enabled)
 
 ## Content flow
 

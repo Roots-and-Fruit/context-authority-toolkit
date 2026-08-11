@@ -35,6 +35,7 @@ require_once CAT_TOOLKIT_DIR . 'includes/class-cat-glossary-admin.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-glossary-hovercards.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-seo-peacekeeper.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-cite-this-block.php';
+require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-settings.php';
 
 /**
  * Bootstrap the plugin.
@@ -49,6 +50,7 @@ function cat_toolkit_bootstrap() {
 	new Cat_Glossary_Handler( $glossary );
 	new Cat_SEO_Peacekeeper();
 	new Cat_Cite_This_Block();
+	new Cat_Term_Settings();
 }
 add_action( 'plugins_loaded', __NAMESPACE__ . '\\cat_toolkit_bootstrap' );
 
