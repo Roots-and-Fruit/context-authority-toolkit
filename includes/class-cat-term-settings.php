@@ -351,19 +351,28 @@ class Cat_Term_Settings {
 	/**
 	 * Request a deferred rewrite flush (runs on next init after CPT/taxonomy register).
 	 *
+	 * The flag is autoloaded while set so the per-request check in
+	 * maybe_flush_rewrites() rides the alloptions query instead of issuing
+	 * its own database lookup; it is deleted immediately after the flush.
+	 *
 	 * @return void
 	 */
 	public static function request_rewrite_flush() {
-		update_option( self::OPTION_REWRITE_FLUSH_NEEDED, 1, false );
+		update_option( self::OPTION_REWRITE_FLUSH_NEEDED, 1, true );
 	}
 
 	/**
 	 * Flush rewrite rules once when flagged.
 	 *
+	 * Reads the flag from the alloptions cache (already loaded every request)
+	 * instead of get_option(), so an absent flag never triggers its own
+	 * database query on the front end.
+	 *
 	 * @return void
 	 */
 	public function maybe_flush_rewrites() {
-		if ( ! get_option( self::OPTION_REWRITE_FLUSH_NEEDED ) ) {
+		$alloptions = wp_load_alloptions();
+		if ( empty( $alloptions[ self::OPTION_REWRITE_FLUSH_NEEDED ] ) ) {
 			return;
 		}
 

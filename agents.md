@@ -34,12 +34,13 @@ This plugin detects glossary terms in post/comment content and wraps the **first
 - **CPT:** `term` (never rename without explicit approval; rewrite base via `Cat_Term_Settings::get_term_slug()`)
 - **Meta keys:** `cat_alternatives` (array), `cat_tooltip_content` (plain text), `cat_disable_autolinking` (boolean)
 - **Term structure options:** `cat_term_slug`, `cat_categories_enabled`, `cat_term_permalink_include_category` — read only via `Cat_Term_Settings` getters
-- **Taxonomy:** `cat-term-category` when Categories enabled — labels always **Category** / **Categories**; never core `category`
-- **Cache group:** `context-authority-toolkit` | **Cache key:** `items-v{version}`
+- **Taxonomy:** `cat-term-category` when Categories enabled — labels always **Category** / **Categories**; never core `category`; caps map to `manage_options` (manage/edit/delete) and `edit_posts` (assign) — never `manage_categories`
+- **Primary Category:** `cat_primary_category` post meta (term ID) — resolve only via `Cat_Term_Category::get_primary_category()`
+- **Cache group:** `context-authority-toolkit` | **Cache key:** `items-v{version}` — clear only via `Cat_Glossary::clear_items_cache()`
 
 ## Category taxonomy note
 
-Category taxonomy registration and schema must call `Cat_Term_Settings::are_categories_enabled()` and `should_include_category_in_permalink()` — do not read those options directly.
+Category taxonomy registration and schema must call `Cat_Term_Settings::are_categories_enabled()` and `should_include_category_in_permalink()` — do not read those options directly. Permalinks never emit synthetic segments (no `uncategorized`); reserved Category slugs (`category`, `term-category`, `uncategorized`, term base) are enforced; legacy permalinks 301 via the `cat_term_permalink_redirects` map (404-only lookup).
 
 ## Critical behavior contracts
 

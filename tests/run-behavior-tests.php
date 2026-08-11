@@ -861,6 +861,230 @@ if ( null === $category_saved_permalink ) {
 $admin_for_category_rewrite->register_post_type();
 flush_rewrite_rules( false );
 
+// Test 21: Rewrite flush flag is autoloaded while set and gone after flush.
+delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_REWRITE_FLUSH_NEEDED );
+wp_cache_delete( 'alloptions', 'options' );
+\ContextAuthorityToolkit\Cat_Term_Settings::request_rewrite_flush();
+wp_cache_delete( 'alloptions', 'options' );
+$alloptions_with_flag = wp_load_alloptions();
+cat_assert(
+	isset( $alloptions_with_flag[ \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_REWRITE_FLUSH_NEEDED ] ),
+	'Flush flag test failed: flag must be autoloaded (present in alloptions) while set.'
+);
+
+$settings_for_flush = new \ContextAuthorityToolkit\Cat_Term_Settings();
+$settings_for_flush->maybe_flush_rewrites();
+wp_cache_delete( 'alloptions', 'options' );
+$alloptions_after_flush = wp_load_alloptions();
+cat_assert(
+	! isset( $alloptions_after_flush[ \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_REWRITE_FLUSH_NEEDED ] ),
+	'Flush flag test failed: flag must be deleted (absent from alloptions) after flush runs.'
+);
+cat_assert(
+	false === get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_REWRITE_FLUSH_NEEDED ),
+	'Flush flag test failed: option must not exist after flush.'
+);
+
+// Test 22: Category cache busts go through the canonical glossary clearer.
+$glossary_cache_key = 'items-v' . \ContextAuthorityToolkit\Cat_Glossary::CACHE_VERSION;
+wp_cache_set( $glossary_cache_key, array( 'sentinel' ), \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP, HOUR_IN_SECONDS );
+cat_assert(
+	false !== wp_cache_get( $glossary_cache_key, \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP ),
+	'Cache clear test failed: sentinel cache seed did not persist.'
+);
+$category_module_for_cache = new \ContextAuthorityToolkit\Cat_Term_Category();
+$category_module_for_cache->clear_glossary_cache();
+cat_assert(
+	false === wp_cache_get( $glossary_cache_key, \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP ),
+	'Cache clear test failed: Category clear path must invalidate the glossary items cache.'
+);
+
+wp_cache_set( $glossary_cache_key, array( 'sentinel-2' ), \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP, HOUR_IN_SECONDS );
+$category_module_for_cache->maybe_clear_cache_on_object_terms( 0, array(), array(), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	false === wp_cache_get( $glossary_cache_key, \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP ),
+	'Cache clear test failed: set_object_terms path must invalidate the glossary items cache.'
+);
+
+// Test 23: Category caps decoupled from core manage_categories.
+$phase2_saved_enabled = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, null );
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, true );
+$category_module_phase2 = new \ContextAuthorityToolkit\Cat_Term_Category();
+$category_module_phase2->register_taxonomy();
+$category_module_phase2->register_primary_meta();
+
+$phase2_tax = get_taxonomy( \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	$phase2_tax && 'manage_options' === $phase2_tax->cap->manage_terms && 'manage_options' === $phase2_tax->cap->edit_terms && 'manage_options' === $phase2_tax->cap->delete_terms,
+	'Category caps test failed: manage/edit/delete terms must map to manage_options.'
+);
+cat_assert(
+	$phase2_tax && 'edit_posts' === $phase2_tax->cap->assign_terms,
+	'Category caps test failed: assign_terms must map to edit_posts.'
+);
+cat_assert(
+	$phase2_tax && ! in_array( 'manage_categories', (array) $phase2_tax->cap, true ),
+	'Category caps test failed: taxonomy must not use core manage_categories.'
+);
+
+// Test 24: Primary Category meta is explicit, stable, and self-healing.
+cat_assert(
+	registered_meta_key_exists( 'post', \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE ),
+	'Primary category test failed: cat_primary_category meta must be registered for the term CPT.'
+);
+
+$primary_cat_a = wp_insert_term( 'Primary Alpha', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'primary-alpha' ) );
+$primary_cat_b = wp_insert_term( 'Primary Beta', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'primary-beta' ) );
+cat_assert(
+	! is_wp_error( $primary_cat_a ) && ! is_wp_error( $primary_cat_b ),
+	'Primary category test failed: could not create fixture Categories.'
+);
+$primary_cat_a_id = (int) $primary_cat_a['term_id'];
+$primary_cat_b_id = (int) $primary_cat_b['term_id'];
+$primary_low_id   = min( $primary_cat_a_id, $primary_cat_b_id );
+$primary_high_id  = max( $primary_cat_a_id, $primary_cat_b_id );
+
+$primary_post_id = cat_create_term( 'Primary Resolution', '<p>Primary resolution fixture.</p>' );
+$test_post_ids[] = $primary_post_id;
+wp_set_object_terms( $primary_post_id, array( $primary_cat_a_id, $primary_cat_b_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+
+// Explicit primary meta wins regardless of assignment order.
+update_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, $primary_high_id );
+$resolved_primary = \ContextAuthorityToolkit\Cat_Term_Category::get_primary_category( $primary_post_id );
+cat_assert(
+	$resolved_primary && $primary_high_id === (int) $resolved_primary->term_id,
+	'Primary category test failed: explicit primary meta must win over assignment order.'
+);
+
+// Invalid primary meta falls back to lowest assigned term ID and backfills.
+update_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, 999999 );
+$resolved_fallback = \ContextAuthorityToolkit\Cat_Term_Category::get_primary_category( $primary_post_id );
+cat_assert(
+	$resolved_fallback && $primary_low_id === (int) $resolved_fallback->term_id,
+	'Primary category test failed: invalid primary must fall back to lowest assigned term ID.'
+);
+cat_assert(
+	$primary_low_id === absint( get_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, true ) ),
+	'Primary category test failed: fallback resolution must backfill the primary meta.'
+);
+
+// Removing the stored primary re-syncs meta to a remaining assignment.
+wp_set_object_terms( $primary_post_id, array( $primary_high_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	$primary_high_id === absint( get_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, true ) ),
+	'Primary category test failed: removing the primary assignment must re-point meta at a remaining Category.'
+);
+
+// Removing all Categories clears the primary meta.
+wp_set_object_terms( $primary_post_id, array(), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	'' === (string) get_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, true ),
+	'Primary category test failed: clearing all Categories must delete the primary meta.'
+);
+
+// Test 25: Permalink integrity — no synthetic segments, reserved slugs, redirects.
+$phase3_saved_include = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, null );
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, true );
+delete_option( \ContextAuthorityToolkit\Cat_Term_Category::REDIRECTS_OPTION );
+
+$admin_for_phase3 = new \ContextAuthorityToolkit\Cat_Glossary_Admin();
+$admin_for_phase3->register_post_type();
+$category_module_phase2->register_taxonomy();
+flush_rewrite_rules( false );
+
+// No primary Category assigned: permalink must be single-segment, no synthetic slug.
+$uncat_permalink = get_permalink( $primary_post_id );
+cat_assert(
+	is_string( $uncat_permalink ) && false === strpos( $uncat_permalink, 'uncategorized' ),
+	'Permalink integrity test failed: no synthetic uncategorized segment allowed.'
+);
+cat_assert(
+	is_string( $uncat_permalink ) && false === strpos( $uncat_permalink, '%' ) && false === strpos( (string) wp_parse_url( $uncat_permalink, PHP_URL_PATH ), '//' ),
+	'Permalink integrity test failed: category-less permalink must collapse cleanly to /base/name/.'
+);
+
+// Assign Categories; deterministic primary appears in the permalink.
+wp_set_object_terms( $primary_post_id, array( $primary_cat_a_id, $primary_cat_b_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+$low_slug  = get_term( $primary_low_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY )->slug;
+$high_slug = get_term( $primary_high_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY )->slug;
+$with_primary_permalink = get_permalink( $primary_post_id );
+cat_assert(
+	is_string( $with_primary_permalink ) && false !== strpos( $with_primary_permalink, '/' . $low_slug . '/' ),
+	'Permalink integrity test failed: permalink must contain the primary Category slug.'
+);
+
+// Changing the primary updates the permalink and records a redirect entry.
+update_post_meta( $primary_post_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, $primary_high_id );
+$after_primary_change = get_permalink( $primary_post_id );
+cat_assert(
+	is_string( $after_primary_change ) && false !== strpos( $after_primary_change, '/' . $high_slug . '/' ),
+	'Permalink integrity test failed: changing primary must update the permalink.'
+);
+
+$phase3_post_name  = (string) get_post_field( 'post_name', $primary_post_id );
+$phase3_base       = \ContextAuthorityToolkit\Cat_Term_Settings::get_term_slug();
+$expected_old_path = (string) wp_parse_url( home_url( '/' . $phase3_base . '/' . $low_slug . '/' . $phase3_post_name . '/' ), PHP_URL_PATH );
+$expected_new_path = (string) wp_parse_url( home_url( '/' . $phase3_base . '/' . $high_slug . '/' . $phase3_post_name . '/' ), PHP_URL_PATH );
+$redirect_map      = get_option( \ContextAuthorityToolkit\Cat_Term_Category::REDIRECTS_OPTION, array() );
+cat_assert(
+	is_array( $redirect_map ) && isset( $redirect_map[ $expected_old_path ] ) && $expected_new_path === $redirect_map[ $expected_old_path ],
+	'Permalink integrity test failed: primary change must record old-path redirect to new path.'
+);
+
+// Reserved Category slugs are rejected on create and reverted on update.
+$reserved_insert = wp_insert_term( 'Category', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	is_wp_error( $reserved_insert ) && 'cat_reserved_category_slug' === $reserved_insert->get_error_code(),
+	'Permalink integrity test failed: reserved slug category must be rejected on insert.'
+);
+$reserved_explicit = wp_insert_term( 'Perfectly Fine Name', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'term-category' ) );
+cat_assert(
+	is_wp_error( $reserved_explicit ),
+	'Permalink integrity test failed: reserved slug term-category must be rejected on insert.'
+);
+wp_update_term( $primary_cat_a_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'uncategorized' ) );
+cat_assert(
+	'uncategorized' !== get_term( $primary_cat_a_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY )->slug,
+	'Permalink integrity test failed: reserved slug must be reverted on update.'
+);
+
+// Taxonomy archive base is /term-category/, not /category/.
+$phase3_archive_link = get_term_link( $primary_cat_a_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	! is_wp_error( $phase3_archive_link ) && false !== strpos( (string) $phase3_archive_link, '/term-category/' ),
+	'Permalink integrity test failed: taxonomy archive base must be term-category.'
+);
+cat_assert(
+	! is_wp_error( $phase3_archive_link ) && false === strpos( (string) $phase3_archive_link, '/' . $phase3_base . '/category/' ),
+	'Permalink integrity test failed: taxonomy archive base must not be bare category.'
+);
+
+// No-category single-segment rewrite rule exists while include mode is on.
+$phase3_rules = get_option( 'rewrite_rules' );
+cat_assert(
+	is_array( $phase3_rules ) && isset( $phase3_rules[ '^' . $phase3_base . '/([^/]+)/?$' ] ),
+	'Permalink integrity test failed: single-segment rewrite rule must exist in include mode.'
+);
+
+// Cleanup Phase 3 state.
+wp_set_object_terms( $primary_post_id, array(), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+delete_option( \ContextAuthorityToolkit\Cat_Term_Category::REDIRECTS_OPTION );
+if ( null === $phase3_saved_include ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, $phase3_saved_include );
+}
+
+wp_delete_term( $primary_cat_a_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+wp_delete_term( $primary_cat_b_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+if ( null === $phase2_saved_enabled ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, $phase2_saved_enabled );
+}
+$admin_for_phase3->register_post_type();
+flush_rewrite_rules( false );
+
 wp_reset_postdata();
 foreach ( $test_post_ids as $test_post_id ) {
 	wp_delete_post( (int) $test_post_id, true );

@@ -95,6 +95,16 @@ class Cat_Glossary_Admin {
 				'supports'     => array( 'title', 'editor', 'excerpt', 'author', 'revisions', 'custom-fields' ),
 			)
 		);
+
+		// Terms without a primary Category keep single-segment URLs when the
+		// category-in-permalink structure is enabled, so both forms must route.
+		if ( Cat_Term_Settings::should_include_category_in_permalink() ) {
+			add_rewrite_rule(
+				'^' . Cat_Term_Settings::get_term_slug() . '/([^/]+)/?$',
+				'index.php?post_type=' . self::POST_TYPE . '&name=$matches[1]',
+				'top'
+			);
+		}
 	}
 
 	/**
