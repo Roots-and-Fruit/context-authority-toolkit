@@ -19,10 +19,12 @@ This document defines live behavior contracts that must remain true unless a cha
 - CPT post type key remains `term`.
 - Rewrite base slug defaults to `term` and is configurable via `cat_term_slug` (Term → Settings).
 - Defaults preserve `/term/{slug}/` permalinks until a site owner changes settings.
-- `cat_categories_enabled` defaults to false; Category taxonomy is not registered until a follow-up ships.
-- `cat_term_permalink_include_category` is stored but does not alter rewrite structure until Categories exist; getters report false when categories are disabled.
-- Rewrite rules flush only when slug or permalink-include options actually change — never on every `init` or admin page load.
+- `cat_categories_enabled` defaults to false; when true, taxonomy `cat-term-category` registers with UI labels **Category** / **Categories** (never core `category`).
+- `cat_term_permalink_include_category` embeds the primary Category slug in term permalinks when categories are enabled; otherwise permalinks stay `/{term-slug}/{post-name}/`.
+- Rewrite rules flush only via deferred flag after structure options change — never on every `init` or admin page load.
 - Consumers must read structure settings through `Cat_Term_Settings` getters.
+- When a glossary term has a Category assigned, canonical DefinedTerm `inDefinedTermSet` uses that Category archive URL; otherwise it falls back to the glossary archive URL.
+- Category archive pages emit canonical `DefinedTermSet` schema (standalone and SEO transport adapters).
 
 ## Markup and accessibility contract
 

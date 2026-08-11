@@ -36,8 +36,12 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Owns Term → Settings screen under the `term` CPT menu (not Settings → General)
   - Options: `cat_term_slug`, `cat_categories_enabled`, `cat_term_permalink_include_category`
   - Static getters are the only intended read path for slug/category/permalink consumers
-  - Flushes rewrite rules only when slug or permalink-include options actually change
+  - Defers rewrite flushes via `cat_rewrite_flush_needed` until after CPT/taxonomy registration
   - Enqueues `assets/js/term-settings.js` only on the Term Settings admin screen
+- `includes/class-cat-term-category.php`
+  - Registers `cat-term-category` taxonomy when Categories are enabled (labels: Category / Categories)
+  - Resolves primary Category and DefinedTermSet URLs for schema consumers
+  - Rewrites term permalinks when category-in-URL mode is enabled
 - `assets/js/glossary-hovercards.js`
   - Manages interaction states (`is-visible`, `is-pinned`)
   - Handles click, hover, focus, and escape-close logic
@@ -56,8 +60,9 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
 - Option: `cat_schema_output_mode` (`auto|standalone|off`)
 - Option: `cat_breadcrumb_integration` (boolean)
 - Option: `cat_term_slug` (rewrite base; default `term`)
-- Option: `cat_categories_enabled` (boolean; default `false` — taxonomy UI not shipped yet)
+- Option: `cat_categories_enabled` (boolean; default `false`)
 - Option: `cat_term_permalink_include_category` (boolean; default `false`; effective only when categories enabled)
+- Taxonomy: `cat-term-category` (registered only when categories enabled; UI labels Category / Categories)
 
 ## Content flow
 

@@ -295,15 +295,15 @@ class Cat_SEO_Peacekeeper {
 			return array();
 		}
 
-		$name         = trim( (string) $term_post->post_title );
-		$description  = get_post_meta( $term_post->ID, Cat_Glossary_Admin::TOOLTIP_META_KEY, true );
-		$description  = is_string( $description ) ? trim( $description ) : '';
-		$term_url     = get_permalink( $term_post->ID );
-		$defined_set  = $this->get_defined_term_set_url();
-		$same_as_raw  = get_post_meta( $term_post->ID, Cat_Glossary_Admin::SAME_AS_META_KEY, true );
-		$sources_raw  = get_post_meta( $term_post->ID, Cat_Glossary_Admin::SOURCES_META_KEY, true );
-		$read_aloud   = $this->prepare_read_aloud_text( $description ? $description : (string) $term_post->post_content );
-		$canonical    = array(
+		$name        = trim( (string) $term_post->post_title );
+		$description = get_post_meta( $term_post->ID, Cat_Glossary_Admin::TOOLTIP_META_KEY, true );
+		$description = is_string( $description ) ? trim( $description ) : '';
+		$term_url    = get_permalink( $term_post->ID );
+		$defined_set = Cat_Term_Category::get_defined_term_set_url_for_post( $term_post->ID );
+		$same_as_raw = get_post_meta( $term_post->ID, Cat_Glossary_Admin::SAME_AS_META_KEY, true );
+		$sources_raw = get_post_meta( $term_post->ID, Cat_Glossary_Admin::SOURCES_META_KEY, true );
+		$read_aloud  = $this->prepare_read_aloud_text( $description ? $description : (string) $term_post->post_content );
+		$canonical   = array(
 			'@type'            => 'DefinedTerm',
 			'@id'              => trailingslashit( (string) $term_url ) . '#definedterm',
 			'name'             => $name,
@@ -412,12 +412,14 @@ class Cat_SEO_Peacekeeper {
 			return;
 		}
 
-		$term_id = $this->get_context_term_post_id();
-		if ( $term_id <= 0 ) {
-			return;
+		$schema_node = array();
+		$term_id     = $this->get_context_term_post_id();
+		if ( $term_id > 0 ) {
+			$schema_node = $this->get_canonical_term_schema( $term_id );
+		} else {
+			$schema_node = $this->get_context_defined_term_set_schema();
 		}
 
-		$schema_node = $this->get_canonical_term_schema( $term_id );
 		if ( empty( $schema_node ) ) {
 			return;
 		}
@@ -447,6 +449,9 @@ class Cat_SEO_Peacekeeper {
 		}
 
 		$node = $this->get_canonical_term_schema( $this->get_context_term_post_id() );
+		if ( empty( $node ) ) {
+			$node = $this->get_context_defined_term_set_schema();
+		}
 		if ( empty( $node ) ) {
 			return $pieces;
 		}
@@ -504,6 +509,9 @@ class Cat_SEO_Peacekeeper {
 
 		$node = $this->get_canonical_term_schema( $this->get_context_term_post_id() );
 		if ( empty( $node ) ) {
+			$node = $this->get_context_defined_term_set_schema();
+		}
+		if ( empty( $node ) ) {
 			return $data;
 		}
 
@@ -533,6 +541,9 @@ class Cat_SEO_Peacekeeper {
 		}
 
 		$node = $this->get_canonical_term_schema( $this->get_context_term_post_id() );
+		if ( empty( $node ) ) {
+			$node = $this->get_context_defined_term_set_schema();
+		}
 		if ( empty( $node ) ) {
 			return $schema;
 		}
@@ -854,12 +865,29 @@ class Cat_SEO_Peacekeeper {
 	 * @return string
 	 */
 	private function get_defined_term_set_url() {
-		$archive_url = get_post_type_archive_link( Cat_Glossary_Admin::POST_TYPE );
-		if ( $archive_url ) {
-			return $archive_url;
+		return Cat_Term_Category::get_defined_term_set_url_for_post( 0 );
+	}
+
+	/**
+	 * Build DefinedTermSet schema for the current Category archive context.
+	 *
+	 * @return array
+	 */
+	private function get_context_defined_term_set_schema() {
+		if ( ! Cat_Term_Settings::are_categories_enabled() ) {
+			return array();
 		}
 
-		return home_url( '/' . Cat_Glossary_Admin::POST_TYPE . '/' );
+		if ( ! is_tax( Cat_Term_Category::TAXONOMY ) ) {
+			return array();
+		}
+
+		$category = get_queried_object();
+		if ( ! ( $category instanceof \WP_Term ) ) {
+			return array();
+		}
+
+		return Cat_Term_Category::get_canonical_defined_term_set_schema( $category );
 	}
 
 	/**

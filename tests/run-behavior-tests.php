@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once ABSPATH . 'wp-admin/includes/user.php';
 
-if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) ) {
+if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) ) {
 	echo "Plugin classes are unavailable. Ensure plugin is active before running tests.\n";
 	exit( 1 );
 }
@@ -738,6 +738,128 @@ cat_assert(
 	wp_script_is( 'cat-term-settings', 'enqueued' ),
 	'Term settings test failed: settings script must enqueue on Term Settings screen.'
 );
+
+// Test 20: Category taxonomy gated by settings + schema DefinedTermSet mapping.
+$category_saved_enabled  = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, null );
+$category_saved_permalink = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, null );
+delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED );
+delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY );
+
+$category_module = new \ContextAuthorityToolkit\Cat_Term_Category();
+$category_module->register_taxonomy();
+cat_assert(
+	! taxonomy_exists( \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY ),
+	'Category taxonomy test failed: taxonomy must not register when categories are disabled.'
+);
+cat_assert(
+	\ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY !== 'category',
+	'Category taxonomy test failed: taxonomy slug must not be core category.'
+);
+
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, true );
+$category_module->register_taxonomy();
+cat_assert(
+	taxonomy_exists( \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY ),
+	'Category taxonomy test failed: taxonomy must register when categories are enabled.'
+);
+
+$tax_obj = get_taxonomy( \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	$tax_obj && 'Category' === $tax_obj->labels->singular_name && 'Categories' === $tax_obj->labels->name,
+	'Category taxonomy test failed: labels must be Category / Categories.'
+);
+cat_assert(
+	! empty( $tax_obj->show_in_rest ),
+	'Category taxonomy test failed: taxonomy must be exposed in REST.'
+);
+cat_assert(
+	in_array( \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE, (array) $tax_obj->object_type, true ),
+	'Category taxonomy test failed: taxonomy must be attached to term CPT only context.'
+);
+
+$cat_term = wp_insert_term( 'SEO Authority', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'seo-authority' ) );
+cat_assert(
+	! is_wp_error( $cat_term ),
+	'Category taxonomy test failed: could not create Category term.'
+);
+$cat_term_id = (int) $cat_term['term_id'];
+
+$categorized_post_id = cat_create_term(
+	'Entity Graph',
+	'<p>Entity Graph connects records.</p>',
+	array(),
+	'Entity Graph tooltip',
+	array( 'https://schema.org/DefinedTerm' ),
+	array(
+		array(
+			'url'           => 'https://example.com/entity-graph',
+			'title'         => 'Entity Graph Source',
+			'publisher'     => 'Example',
+			'datePublished' => '2026-01-15',
+		),
+	)
+);
+$test_post_ids[] = $categorized_post_id;
+wp_set_object_terms( $categorized_post_id, array( $cat_term_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+
+$fallback_schema = $seo_peacekeeper->get_canonical_term_schema( $schema_term_id );
+$category_link   = get_term_link( $cat_term_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+$with_cat_schema = $seo_peacekeeper->get_canonical_term_schema( $categorized_post_id );
+
+cat_assert(
+	! empty( $fallback_schema['inDefinedTermSet'] ),
+	'Category taxonomy test failed: uncategorized terms still need inDefinedTermSet fallback.'
+);
+cat_assert(
+	! is_wp_error( $category_link ) && ! empty( $with_cat_schema['inDefinedTermSet'] ) && (string) $category_link === (string) $with_cat_schema['inDefinedTermSet'],
+	'Category taxonomy test failed: categorized term inDefinedTermSet must use Category archive URL.'
+);
+
+$defined_set_schema = \ContextAuthorityToolkit\Cat_Term_Category::get_canonical_defined_term_set_schema( get_term( $cat_term_id ) );
+cat_assert(
+	! empty( $defined_set_schema['@type'] ) && 'DefinedTermSet' === $defined_set_schema['@type'],
+	'Category taxonomy test failed: Category archive schema must be DefinedTermSet.'
+);
+cat_assert(
+	! empty( $defined_set_schema['name'] ) && 'SEO Authority' === $defined_set_schema['name'],
+	'Category taxonomy test failed: DefinedTermSet name must match Category.'
+);
+
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, true );
+$admin_for_category_rewrite = new \ContextAuthorityToolkit\Cat_Glossary_Admin();
+$admin_for_category_rewrite->register_post_type();
+flush_rewrite_rules( false );
+$categorized_permalink = get_permalink( $categorized_post_id );
+cat_assert(
+	is_string( $categorized_permalink ) && false !== strpos( $categorized_permalink, '/seo-authority/' ),
+	'Category taxonomy test failed: permalink include mode must embed Category slug.'
+);
+
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, false );
+$disabled_set_url = \ContextAuthorityToolkit\Cat_Term_Category::get_defined_term_set_url_for_post( $categorized_post_id );
+cat_assert(
+	null === \ContextAuthorityToolkit\Cat_Term_Category::get_primary_category( $categorized_post_id ),
+	'Category taxonomy test failed: primary category helper must return null when categories disabled.'
+);
+cat_assert(
+	is_string( $disabled_set_url ) && ( is_wp_error( $category_link ) || (string) $category_link !== (string) $disabled_set_url ),
+	'Category taxonomy test failed: disabled categories must fall back away from Category archive URL.'
+);
+
+wp_delete_term( $cat_term_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+
+if ( null === $category_saved_enabled ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, $category_saved_enabled );
+}
+if ( null === $category_saved_permalink ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, $category_saved_permalink );
+}
+$admin_for_category_rewrite->register_post_type();
+flush_rewrite_rules( false );
 
 wp_reset_postdata();
 foreach ( $test_post_ids as $test_post_id ) {
