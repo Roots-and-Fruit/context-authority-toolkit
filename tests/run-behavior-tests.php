@@ -1066,6 +1066,33 @@ cat_assert(
 	'Permalink integrity test failed: single-segment rewrite rule must exist in include mode.'
 );
 
+// Renaming a Category slug must record redirects for term URLs embedding it.
+$renamed_slug = $high_slug . '-renamed';
+wp_update_term( $primary_high_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => $renamed_slug ) );
+cat_assert(
+	$renamed_slug === get_term( $primary_high_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY )->slug,
+	'Category rename test failed: non-reserved slug rename must be applied.'
+);
+
+$rename_map            = get_option( \ContextAuthorityToolkit\Cat_Term_Category::REDIRECTS_OPTION, array() );
+$expected_term_old     = (string) wp_parse_url( home_url( '/' . $phase3_base . '/' . $high_slug . '/' . $phase3_post_name . '/' ), PHP_URL_PATH );
+$expected_term_new     = (string) wp_parse_url( home_url( '/' . $phase3_base . '/' . $renamed_slug . '/' . $phase3_post_name . '/' ), PHP_URL_PATH );
+$expected_archive_old  = (string) wp_parse_url( home_url( '/' . $phase3_base . '/' . \ContextAuthorityToolkit\Cat_Term_Category::REWRITE_SEGMENT . '/' . $high_slug . '/' ), PHP_URL_PATH );
+$expected_archive_new  = (string) wp_parse_url( home_url( '/' . $phase3_base . '/' . \ContextAuthorityToolkit\Cat_Term_Category::REWRITE_SEGMENT . '/' . $renamed_slug . '/' ), PHP_URL_PATH );
+cat_assert(
+	is_array( $rename_map ) && isset( $rename_map[ $expected_term_old ] ) && $expected_term_new === $rename_map[ $expected_term_old ],
+	'Category rename test failed: term permalink embedding the old slug must gain a redirect to the new slug path.'
+);
+cat_assert(
+	is_array( $rename_map ) && isset( $rename_map[ $expected_archive_old ] ) && $expected_archive_new === $rename_map[ $expected_archive_old ],
+	'Category rename test failed: taxonomy archive path must gain a redirect to the renamed slug.'
+);
+$renamed_permalink = get_permalink( $primary_post_id );
+cat_assert(
+	is_string( $renamed_permalink ) && false !== strpos( $renamed_permalink, '/' . $renamed_slug . '/' ),
+	'Category rename test failed: term permalink must use the renamed Category slug.'
+);
+
 // Cleanup Phase 3 state.
 wp_set_object_terms( $primary_post_id, array(), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
 delete_option( \ContextAuthorityToolkit\Cat_Term_Category::REDIRECTS_OPTION );
