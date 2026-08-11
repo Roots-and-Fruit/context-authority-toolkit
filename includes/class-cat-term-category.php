@@ -342,7 +342,9 @@ class Cat_Term_Category {
 	/**
 	 * Keep reserved slugs out of Category updates (reverts to current slug).
 	 *
-	 * Also records a taxonomy-archive redirect when a Category slug changes.
+	 * Also records redirects when a Category slug changes: the taxonomy
+	 * archive path, and every published term URL that embeds the slug as
+	 * its primary Category (category-in-permalink mode).
 	 *
 	 * @param array  $data     Sanitized term data destined for the database.
 	 * @param int    $term_id  Term ID.
@@ -372,9 +374,57 @@ class Cat_Term_Category {
 				self::build_public_path( $base . '/' . self::REWRITE_SEGMENT . '/' . $current->slug ),
 				self::build_public_path( $base . '/' . self::REWRITE_SEGMENT . '/' . $data['slug'] )
 			);
+
+			$this->record_redirects_on_category_slug_change( (int) $term_id, (string) $current->slug, (string) $data['slug'] );
 		}
 
 		return $data;
+	}
+
+	/**
+	 * Record term-permalink redirects for posts whose primary Category slug
+	 * is being renamed (category-in-permalink mode only).
+	 *
+	 * Runs before the term row is written, so paths are built from the passed
+	 * old/new slugs rather than re-read from the database.
+	 *
+	 * @param int    $term_id  Category term ID being renamed.
+	 * @param string $old_slug Current slug.
+	 * @param string $new_slug Incoming slug.
+	 * @return void
+	 */
+	private function record_redirects_on_category_slug_change( $term_id, $old_slug, $new_slug ) {
+		if ( ! Cat_Term_Settings::should_include_category_in_permalink() ) {
+			return;
+		}
+
+		$posts = get_posts(
+			array(
+				'post_type'        => Cat_Glossary_Admin::POST_TYPE,
+				'post_status'      => 'publish',
+				'numberposts'      => self::REDIRECTS_MAX,
+				'suppress_filters' => false,
+				'tax_query'        => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- Bounded, admin-only write path.
+					array(
+						'taxonomy' => self::TAXONOMY,
+						'field'    => 'term_id',
+						'terms'    => $term_id,
+					),
+				),
+			)
+		);
+
+		foreach ( $posts as $term_post ) {
+			$primary = self::get_primary_category( $term_post->ID );
+			if ( ! $primary || (int) $primary->term_id !== $term_id ) {
+				continue; // Slug only appears in permalinks where this Category is primary.
+			}
+
+			self::record_permalink_redirect(
+				self::build_term_path( $term_post->post_name, $old_slug ),
+				self::build_term_path( $term_post->post_name, $new_slug )
+			);
+		}
 	}
 
 	/**
