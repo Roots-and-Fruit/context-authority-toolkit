@@ -206,12 +206,12 @@ class Cat_Term_Category {
 	}
 
 	/**
-	 * Clear glossary item cache.
+	 * Clear glossary item cache through the canonical glossary API.
 	 *
 	 * @return void
 	 */
 	public function clear_glossary_cache() {
-		wp_cache_delete( 'items-v1', 'context-authority-toolkit' );
+		Cat_Glossary::clear_items_cache();
 	}
 
 	/**

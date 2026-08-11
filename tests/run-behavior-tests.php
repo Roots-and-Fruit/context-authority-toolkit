@@ -861,6 +861,51 @@ if ( null === $category_saved_permalink ) {
 $admin_for_category_rewrite->register_post_type();
 flush_rewrite_rules( false );
 
+// Test 21: Rewrite flush flag is autoloaded while set and gone after flush.
+delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_REWRITE_FLUSH_NEEDED );
+wp_cache_delete( 'alloptions', 'options' );
+\ContextAuthorityToolkit\Cat_Term_Settings::request_rewrite_flush();
+wp_cache_delete( 'alloptions', 'options' );
+$alloptions_with_flag = wp_load_alloptions();
+cat_assert(
+	isset( $alloptions_with_flag[ \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_REWRITE_FLUSH_NEEDED ] ),
+	'Flush flag test failed: flag must be autoloaded (present in alloptions) while set.'
+);
+
+$settings_for_flush = new \ContextAuthorityToolkit\Cat_Term_Settings();
+$settings_for_flush->maybe_flush_rewrites();
+wp_cache_delete( 'alloptions', 'options' );
+$alloptions_after_flush = wp_load_alloptions();
+cat_assert(
+	! isset( $alloptions_after_flush[ \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_REWRITE_FLUSH_NEEDED ] ),
+	'Flush flag test failed: flag must be deleted (absent from alloptions) after flush runs.'
+);
+cat_assert(
+	false === get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_REWRITE_FLUSH_NEEDED ),
+	'Flush flag test failed: option must not exist after flush.'
+);
+
+// Test 22: Category cache busts go through the canonical glossary clearer.
+$glossary_cache_key = 'items-v' . \ContextAuthorityToolkit\Cat_Glossary::CACHE_VERSION;
+wp_cache_set( $glossary_cache_key, array( 'sentinel' ), \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP, HOUR_IN_SECONDS );
+cat_assert(
+	false !== wp_cache_get( $glossary_cache_key, \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP ),
+	'Cache clear test failed: sentinel cache seed did not persist.'
+);
+$category_module_for_cache = new \ContextAuthorityToolkit\Cat_Term_Category();
+$category_module_for_cache->clear_glossary_cache();
+cat_assert(
+	false === wp_cache_get( $glossary_cache_key, \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP ),
+	'Cache clear test failed: Category clear path must invalidate the glossary items cache.'
+);
+
+wp_cache_set( $glossary_cache_key, array( 'sentinel-2' ), \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP, HOUR_IN_SECONDS );
+$category_module_for_cache->maybe_clear_cache_on_object_terms( 0, array(), array(), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+cat_assert(
+	false === wp_cache_get( $glossary_cache_key, \ContextAuthorityToolkit\Cat_Glossary::CACHE_GROUP ),
+	'Cache clear test failed: set_object_terms path must invalidate the glossary items cache.'
+);
+
 wp_reset_postdata();
 foreach ( $test_post_ids as $test_post_id ) {
 	wp_delete_post( (int) $test_post_id, true );

@@ -19,17 +19,27 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Cat_Glossary {
 	/**
 	 * Cache group.
+	 */
+	const CACHE_GROUP = 'context-authority-toolkit';
+
+	/**
+	 * Cache key version.
+	 */
+	const CACHE_VERSION = 1;
+
+	/**
+	 * Cache group.
 	 *
 	 * @var string
 	 */
-	private $cache_group = 'context-authority-toolkit';
+	private $cache_group = self::CACHE_GROUP;
 
 	/**
 	 * Cache key version.
 	 *
 	 * @var int
 	 */
-	private $cache_version = 1;
+	private $cache_version = self::CACHE_VERSION;
 
 	/**
 	 * Construct the glossary object.
@@ -188,7 +198,16 @@ class Cat_Glossary {
 	 * @return void
 	 */
 	public function clear_cache() {
-		wp_cache_delete( "items-v{$this->cache_version}", $this->cache_group );
+		self::clear_items_cache();
+	}
+
+	/**
+	 * Clear the glossary items cache (canonical clear path for all modules).
+	 *
+	 * @return void
+	 */
+	public static function clear_items_cache() {
+		wp_cache_delete( 'items-v' . self::CACHE_VERSION, self::CACHE_GROUP );
 	}
 
 	/**
