@@ -1,12 +1,21 @@
 name: Product change
-description: A user-facing change. Start with who it is for, then how to build it.
+description: A user-facing change. Start with the pitch, then who it is for, then how to build it.
 title: "[Who] can …"
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Write this as a product change, not a dump of files to edit. The first four sections describe the user. The last section should be detailed enough that a developer or agent can start in the right layer without a second discovery pass.
+        Write this as a product change, not a dump of files to edit. Open with the elevator pitch. The next four sections describe the user. The last section should be detailed enough that a developer or agent can start in the right layer without a second discovery pass.
+
+  - type: textarea
+    id: tldr
+    attributes:
+      label: TL;DR
+      description: The elevator pitch. One or two sentences that say exactly what this issue is about and why it matters. Someone who reads only this section should know whether to open the rest.
+      placeholder: Glossary mentions are buttons, and the term permalink sits on a hidden Learn more link. Mentions need to be real links, or readers and answer engines never get a path to the definition.
+    validations:
+      required: true
 
   - type: textarea
     id: who
