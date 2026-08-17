@@ -37,6 +37,7 @@ require_once CAT_TOOLKIT_DIR . 'includes/class-cat-seo-peacekeeper.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-cite-this-block.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-settings.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-category.php';
+require_once CAT_TOOLKIT_DIR . 'includes/class-cat-abilities.php';
 
 /**
  * Bootstrap the plugin.
@@ -46,13 +47,14 @@ require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-category.php';
 function cat_toolkit_bootstrap() {
 	$glossary = new Cat_Glossary();
 
-	new Cat_Glossary_Admin();
+	$admin = new Cat_Glossary_Admin();
 	new Cat_Glossary_Hovercards();
 	new Cat_Glossary_Handler( $glossary );
 	new Cat_SEO_Peacekeeper();
 	new Cat_Cite_This_Block();
 	new Cat_Term_Settings();
 	new Cat_Term_Category();
+	new Cat_Abilities( $admin );
 }
 add_action( 'plugins_loaded', __NAMESPACE__ . '\\cat_toolkit_bootstrap' );
 

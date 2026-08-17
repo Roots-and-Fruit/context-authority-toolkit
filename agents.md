@@ -26,6 +26,7 @@ This plugin detects glossary terms in post/comment content and wraps the **first
 | `includes/class-cat-glossary-hovercards.php` | Frontend asset enqueueing |
 | `includes/class-cat-term-settings.php` | Term → Settings (slug, categories toggle, permalink mode) |
 | `includes/class-cat-term-category.php` | Category taxonomy (`cat-term-category`) + DefinedTermSet helpers |
+| `includes/class-cat-abilities.php` | Abilities API CRUD + term meta + Category assignment (MCP tools) |
 | `assets/js/glossary-hovercards.js` | Interaction states, click/hover/focus/escape handling |
 | `assets/js/term-settings.js` | Settings-screen preview + conditional permalink control |
 
@@ -37,6 +38,7 @@ This plugin detects glossary terms in post/comment content and wraps the **first
 - **Taxonomy:** `cat-term-category` when Categories enabled — labels always **Category** / **Categories**; never core `category`; caps map to `manage_options` (manage/edit/delete) and `edit_posts` (assign) — never `manage_categories`
 - **Primary Category:** `cat_primary_category` post meta (term ID) — resolve only via `Cat_Term_Category::get_primary_category()`
 - **Cache group:** `context-authority-toolkit` | **Cache key:** `items-v{version}` — clear only via `Cat_Glossary::clear_items_cache()`
+- **Abilities:** `context-authority-toolkit/{list-terms,get-term,create-term,update-term,delete-term,list-term-meta,update-term-meta}` — register only when Abilities API exists; MCP `meta.mcp.public=true`
 
 ## Category taxonomy note
 

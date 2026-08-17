@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once ABSPATH . 'wp-admin/includes/user.php';
 
-if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) ) {
+if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Abilities' ) ) {
 	echo "Plugin classes are unavailable. Ensure plugin is active before running tests.\n";
 	exit( 1 );
 }
@@ -96,6 +96,26 @@ function cat_create_term( $name, $single_content, array $alternatives = array(),
 	}
 
 	return (int) $post_id;
+}
+
+/**
+ * Execute a registered CAT ability.
+ *
+ * @param string $name  Ability name.
+ * @param array  $input Ability input.
+ * @return mixed|\WP_Error
+ */
+function cat_execute_ability( $name, array $input = array() ) {
+	if ( ! function_exists( 'wp_get_ability' ) ) {
+		return new WP_Error( 'cat_abilities_missing', 'Abilities API is not available.' );
+	}
+
+	$ability = wp_get_ability( $name );
+	if ( ! $ability ) {
+		return new WP_Error( 'cat_ability_unregistered', 'Ability is not registered: ' . $name );
+	}
+
+	return $ability->execute( $input );
 }
 
 /**
@@ -1111,6 +1131,313 @@ if ( null === $phase2_saved_enabled ) {
 }
 $admin_for_phase3->register_post_type();
 flush_rewrite_rules( false );
+
+// Test 26: Abilities API CRUD, meta, categories, and permission gates.
+$ability_ids = array(
+	'context-authority-toolkit/list-terms',
+	'context-authority-toolkit/get-term',
+	'context-authority-toolkit/create-term',
+	'context-authority-toolkit/update-term',
+	'context-authority-toolkit/delete-term',
+	'context-authority-toolkit/list-term-meta',
+	'context-authority-toolkit/update-term-meta',
+);
+cat_assert(
+	function_exists( 'wp_get_ability' ) && function_exists( 'wp_get_ability_category' ),
+	'Abilities test failed: WordPress Abilities API functions are unavailable.'
+);
+$ability_category = wp_get_ability_category( 'context-authority-toolkit' );
+cat_assert(
+	$ability_category instanceof WP_Ability_Category,
+	'Abilities test failed: context-authority-toolkit category must be registered.'
+);
+foreach ( $ability_ids as $ability_id ) {
+	$ability = wp_get_ability( $ability_id );
+	cat_assert(
+		$ability instanceof WP_Ability,
+		'Abilities test failed: ' . $ability_id . ' must be registered.'
+	);
+	if ( $ability instanceof WP_Ability ) {
+		$meta = $ability->get_meta();
+		cat_assert(
+			! empty( $meta['show_in_rest'] ) && ! empty( $meta['mcp']['public'] ) && isset( $meta['mcp']['type'] ) && 'tool' === $meta['mcp']['type'],
+			'Abilities test failed: ' . $ability_id . ' must be REST/MCP discoverable.'
+		);
+	}
+}
+
+$created_via_ability = cat_execute_ability(
+	'context-authority-toolkit/create-term',
+	array(
+		'title'               => 'Ability CRUD Term',
+		'status'              => 'publish',
+		'content'             => '<p>Ability body.</p>',
+		'tooltip'             => "Line one\nLine two",
+		'alternatives'        => array( 'ACT' ),
+		'same_as'             => array( 'https://schema.org/DefinedTerm', 'ftp://example.com/bad' ),
+		'sources'             => array(
+			array(
+				'url'           => 'https://example.com/ability-source',
+				'title'         => 'Ability Source',
+				'publisher'     => 'Example',
+				'datePublished' => '2026-03-01',
+			),
+		),
+		'disable_autolinking' => false,
+		'meta'                => array(
+			'ability_custom_note' => 'from-create',
+		),
+	)
+);
+cat_assert(
+	is_array( $created_via_ability ) && ! empty( $created_via_ability['id'] ),
+	'Abilities test failed: create-term must return a term payload.'
+);
+$ability_term_id = is_array( $created_via_ability ) ? (int) $created_via_ability['id'] : 0;
+if ( $ability_term_id > 0 ) {
+	$test_post_ids[] = $ability_term_id;
+}
+cat_assert(
+	is_array( $created_via_ability ) && 'Ability CRUD Term' === $created_via_ability['title'] && 'publish' === $created_via_ability['status'],
+	'Abilities test failed: create-term must persist title and status.'
+);
+cat_assert(
+	is_array( $created_via_ability ) && "Line one\nLine two" === $created_via_ability['tooltip'],
+	'Abilities test failed: create-term must persist tooltip with line breaks.'
+);
+cat_assert(
+	is_array( $created_via_ability ) && in_array( 'https://schema.org/DefinedTerm', $created_via_ability['same_as'], true ),
+	'Abilities test failed: create-term must keep public http(s) sameAs URLs.'
+);
+cat_assert(
+	is_array( $created_via_ability ) && ! in_array( 'ftp://example.com/bad', $created_via_ability['same_as'], true ),
+	'Abilities test failed: create-term must reject non-public sameAs URLs.'
+);
+cat_assert(
+	is_array( $created_via_ability ) && isset( $created_via_ability['meta']['ability_custom_note'] ) && 'from-create' === $created_via_ability['meta']['ability_custom_note'],
+	'Abilities test failed: create-term must persist arbitrary post meta.'
+);
+
+$missing_title = cat_execute_ability( 'context-authority-toolkit/create-term', array( 'content' => 'Nope' ) );
+cat_assert(
+	is_wp_error( $missing_title ),
+	'Abilities test failed: create-term without title must error.'
+);
+
+$got_by_slug = cat_execute_ability(
+	'context-authority-toolkit/get-term',
+	array( 'slug' => is_array( $created_via_ability ) ? $created_via_ability['slug'] : '' )
+);
+cat_assert(
+	is_array( $got_by_slug ) && $ability_term_id === (int) $got_by_slug['id'] && ! empty( $got_by_slug['permalink'] ),
+	'Abilities test failed: get-term by slug must return the created term with permalink.'
+);
+
+$listed = cat_execute_ability(
+	'context-authority-toolkit/list-terms',
+	array(
+		'search'   => 'Ability CRUD Term',
+		'status'   => 'publish',
+		'per_page' => 20,
+	)
+);
+$listed_ids = array();
+if ( is_array( $listed ) && isset( $listed['terms'] ) && is_array( $listed['terms'] ) ) {
+	foreach ( $listed['terms'] as $listed_term ) {
+		if ( isset( $listed_term['id'] ) ) {
+			$listed_ids[] = (int) $listed_term['id'];
+		}
+	}
+}
+cat_assert(
+	is_array( $listed ) && in_array( $ability_term_id, $listed_ids, true ),
+	'Abilities test failed: list-terms search must include the created term.'
+);
+
+$updated_via_ability = cat_execute_ability(
+	'context-authority-toolkit/update-term',
+	array(
+		'id'      => $ability_term_id,
+		'tooltip' => 'Updated tooltip',
+		'meta'    => array(
+			'ability_custom_note' => 'from-update',
+			'ability_extra_flag'  => '1',
+		),
+	)
+);
+cat_assert(
+	is_array( $updated_via_ability ) && 'Updated tooltip' === $updated_via_ability['tooltip'],
+	'Abilities test failed: update-term must change tooltip.'
+);
+cat_assert(
+	is_array( $updated_via_ability ) && isset( $updated_via_ability['meta']['ability_custom_note'], $updated_via_ability['meta']['ability_extra_flag'] ) && 'from-update' === $updated_via_ability['meta']['ability_custom_note'] && '1' === $updated_via_ability['meta']['ability_extra_flag'],
+	'Abilities test failed: update-term must write arbitrary post meta.'
+);
+
+$listed_meta = cat_execute_ability(
+	'context-authority-toolkit/list-term-meta',
+	array( 'id' => $ability_term_id )
+);
+cat_assert(
+	is_array( $listed_meta ) && isset( $listed_meta['meta']['ability_custom_note'] ) && 'from-update' === $listed_meta['meta']['ability_custom_note'],
+	'Abilities test failed: list-term-meta must return all post meta including custom keys.'
+);
+cat_assert(
+	is_array( $listed_meta ) && array_key_exists( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_META_KEY, $listed_meta['meta'] ),
+	'Abilities test failed: list-term-meta must include CAT tooltip meta.'
+);
+
+$meta_write = cat_execute_ability(
+	'context-authority-toolkit/update-term-meta',
+	array(
+		'id'     => $ability_term_id,
+		'key'    => 'ability_single_key',
+		'value'  => 'single-value',
+		'delete' => array( 'ability_extra_flag' ),
+	)
+);
+cat_assert(
+	is_array( $meta_write ) && isset( $meta_write['meta']['ability_single_key'] ) && 'single-value' === $meta_write['meta']['ability_single_key'],
+	'Abilities test failed: update-term-meta must set a single key/value.'
+);
+cat_assert(
+	is_array( $meta_write ) && ! array_key_exists( 'ability_extra_flag', $meta_write['meta'] ),
+	'Abilities test failed: update-term-meta must delete requested keys.'
+);
+
+$lock_write = cat_execute_ability(
+	'context-authority-toolkit/update-term-meta',
+	array(
+		'id'   => $ability_term_id,
+		'meta' => array(
+			'_edit_lock' => 'not-allowed',
+		),
+	)
+);
+cat_assert(
+	is_wp_error( $lock_write ) && 'cat_protected_meta_key' === $lock_write->get_error_code(),
+	'Abilities test failed: update-term-meta must reject editor lock internals.'
+);
+
+$ability_saved_categories = get_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, null );
+update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, true );
+$ability_category_module = new \ContextAuthorityToolkit\Cat_Term_Category();
+$ability_category_module->register_taxonomy();
+$ability_cat = wp_insert_term( 'Ability Category', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'ability-category' ) );
+cat_assert(
+	! is_wp_error( $ability_cat ),
+	'Abilities test failed: could not create Category fixture for assignment.'
+);
+$ability_cat_id = is_array( $ability_cat ) ? (int) $ability_cat['term_id'] : 0;
+
+$with_category = cat_execute_ability(
+	'context-authority-toolkit/update-term',
+	array(
+		'id'               => $ability_term_id,
+		'categories'       => array( 'ability-category' ),
+		'primary_category' => $ability_cat_id,
+	)
+);
+cat_assert(
+	is_array( $with_category ) && ! empty( $with_category['categories'] ) && (int) $with_category['categories'][0]['id'] === $ability_cat_id,
+	'Abilities test failed: update-term must assign CAT Categories.'
+);
+cat_assert(
+	is_array( $with_category ) && ! empty( $with_category['primary_category']['id'] ) && $ability_cat_id === (int) $with_category['primary_category']['id'],
+	'Abilities test failed: update-term must persist primary Category.'
+);
+
+$listed_by_category = cat_execute_ability(
+	'context-authority-toolkit/list-terms',
+	array(
+		'category' => 'ability-category',
+		'status'   => 'publish',
+	)
+);
+$listed_by_category_ids = array();
+if ( is_array( $listed_by_category ) && isset( $listed_by_category['terms'] ) && is_array( $listed_by_category['terms'] ) ) {
+	foreach ( $listed_by_category['terms'] as $listed_term ) {
+		if ( isset( $listed_term['id'] ) ) {
+			$listed_by_category_ids[] = (int) $listed_term['id'];
+		}
+	}
+}
+cat_assert(
+	in_array( $ability_term_id, $listed_by_category_ids, true ),
+	'Abilities test failed: list-terms must filter by Category.'
+);
+
+if ( ! is_wp_error( $subscriber_user ) ) {
+	wp_set_current_user( (int) $subscriber_user );
+	$denied_create = cat_execute_ability(
+		'context-authority-toolkit/create-term',
+		array(
+			'title'  => 'Subscriber should not create',
+			'status' => 'publish',
+		)
+	);
+	cat_assert(
+		is_wp_error( $denied_create ) && 'ability_invalid_permissions' === $denied_create->get_error_code(),
+		'Abilities test failed: subscriber must not create terms.'
+	);
+	$denied_update = cat_execute_ability(
+		'context-authority-toolkit/update-term',
+		array(
+			'id'      => $ability_term_id,
+			'tooltip' => 'nope',
+		)
+	);
+	cat_assert(
+		is_wp_error( $denied_update ) && 'ability_invalid_permissions' === $denied_update->get_error_code(),
+		'Abilities test failed: subscriber must not update terms.'
+	);
+	$denied_meta = cat_execute_ability(
+		'context-authority-toolkit/list-term-meta',
+		array( 'id' => $ability_term_id )
+	);
+	cat_assert(
+		is_wp_error( $denied_meta ) && 'ability_invalid_permissions' === $denied_meta->get_error_code(),
+		'Abilities test failed: subscriber must not list term meta.'
+	);
+	wp_set_current_user( $admin_user_id );
+}
+
+$trashed = cat_execute_ability(
+	'context-authority-toolkit/delete-term',
+	array( 'id' => $ability_term_id )
+);
+cat_assert(
+	is_array( $trashed ) && ! empty( $trashed['success'] ) && ! empty( $trashed['trashed'] ) && 'trash' === get_post_status( $ability_term_id ),
+	'Abilities test failed: delete-term must trash by default.'
+);
+$forced = cat_execute_ability(
+	'context-authority-toolkit/delete-term',
+	array(
+		'id'    => $ability_term_id,
+		'force' => true,
+	)
+);
+cat_assert(
+	is_array( $forced ) && ! empty( $forced['success'] ) && false === get_post_status( $ability_term_id ),
+	'Abilities test failed: delete-term with force must permanently delete.'
+);
+$test_post_ids = array_values(
+	array_filter(
+		$test_post_ids,
+		static function ( $maybe_id ) use ( $ability_term_id ) {
+			return (int) $maybe_id !== (int) $ability_term_id;
+		}
+	)
+);
+
+if ( $ability_cat_id > 0 ) {
+	wp_delete_term( $ability_cat_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+}
+if ( null === $ability_saved_categories ) {
+	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED );
+} else {
+	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, $ability_saved_categories );
+}
 
 wp_reset_postdata();
 foreach ( $test_post_ids as $test_post_id ) {
