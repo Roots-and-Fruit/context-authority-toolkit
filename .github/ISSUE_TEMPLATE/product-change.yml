@@ -1,0 +1,61 @@
+name: Product change
+description: A user-facing change. Start with who it is for, then how to build it.
+title: "[Who] can …"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write this as a product change, not a dump of files to edit. The first four sections describe the user. The last section should be detailed enough that a developer or agent can start in the right layer without a second discovery pass.
+
+  - type: textarea
+    id: who
+    attributes:
+      label: Who this is for
+      description: Name the person and the moment they are in (reader, editor, site owner) and what they are trying to do. This keeps the issue attached to a human job. If you cannot name them, you are still describing a system change, not a product change.
+      placeholder: A reader hits a defined term in an article and wants the full definition.
+    validations:
+      required: true
+
+  - type: textarea
+    id: experience
+    attributes:
+      label: How this impacts the product experience
+      description: What changes in the live product once this ships. A page, a tooltip, a setting, a search snippet, a workflow. Be specific enough that two people would picture the same screen. If the impact is only "better schema" or "more maintainable code," rewrite until a user would notice it.
+      placeholder: The mention is a real link to the term URL. The tooltip can still open.
+    validations:
+      required: true
+
+  - type: textarea
+    id: done
+    attributes:
+      label: What Done looks like
+      description: The check that closes the issue. A URL to open, a setting to flip, view-source to inspect, a visitor path that now works. Include important negatives (caps, things this issue will not change). This is how you know the experience landed, not merely that a PR merged.
+      placeholder: View source on a post with a linked term and see an href to the term permalink on the mention, still capped at two per page.
+    validations:
+      required: true
+
+  - type: textarea
+    id: urgency
+    attributes:
+      label: Urgency
+      description: Why this is ahead of other open issues, or say it can wait. Cost of delay only. "Nothing is decaying; do it when touching this surface" is a valid answer. This is for sequencing, not persuasion.
+      placeholder: Answer engines cite definition URLs now, and auto-linking currently hides the permalink in a dialog.
+    validations:
+      required: true
+
+  - type: textarea
+    id: technical
+    attributes:
+      label: How to solve this technically
+      description: |
+        Enough for a developer or agent to start without reverse-engineering the plugin. Include current behavior, intended change, likely files or surfaces, data already in the product to reuse, contracts that must not break, and out of scope.
+
+        This should not be a full implementation plan or a file-by-file patch. It should be heavier than a sticky note. If someone still has to guess whether this is markup, schema, settings, or a new field, this section is too thin.
+      placeholder: |
+        Current: mentions wrap in a button; Learn more is inside a hidden dialog.
+        Change: keep the tooltip, add a crawlable permalink on the mention.
+        Surface: auto-link hovercard markup. Reuse the existing two-mention cap and rel="help".
+        Do not: put the definition only in JSON-LD; do not lift the mention cap in this issue.
+    validations:
+      required: true
