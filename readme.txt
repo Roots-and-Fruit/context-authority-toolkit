@@ -4,7 +4,7 @@ Tags: glossary, tooltips, schema, seo, aeo
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 0.9.2
+Stable tag: 0.10.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,12 @@ For full provenance and attribution details, see:
 * ATTRIBUTION.txt
 
 == Changelog ==
+
+= 0.10.0 =
+* Added a Term → Settings screen for the glossary rewrite slug, Categories toggle, and whether Category appears in permalinks.
+* Added a CAT-owned Category taxonomy (labels stay Category / Categories; never core post categories) with DefinedTermSet schema on category archives and inDefinedTermSet on terms.
+* Hardened Category permalinks: no synthetic uncategorized URLs, reserved slug protection, and 301 redirects when public term URLs change.
+* Added WordPress Abilities API CRUD tools for MCP remote management of glossary terms, including listing/updating all post meta and assigning Categories.
 
 = 0.9.2 =
 * Bumped plugin version to 0.9.2.

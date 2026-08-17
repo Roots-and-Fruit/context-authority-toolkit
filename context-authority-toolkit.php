@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       Context & Authority Toolkit
  * Description:       Adds glossary-powered context tooltips for terms in post and comment content.
- * Version:           0.9.2
+ * Version:           0.10.0
  * Author:            Crucible CRM
  * Author URI:        https://cruciblecrm.com/
  * Forked from:       WordPress.org Glossary (Automattic and contributors)
@@ -24,7 +24,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * and remains licensed under GPL-2.0-or-later. See ATTRIBUTION.txt.
  */
 
-define( 'CAT_TOOLKIT_VERSION', '0.9.2' );
+define( 'CAT_TOOLKIT_VERSION', '0.10.0' );
 define( 'CAT_TOOLKIT_FILE', __FILE__ );
 define( 'CAT_TOOLKIT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CAT_TOOLKIT_URL', plugin_dir_url( __FILE__ ) );
