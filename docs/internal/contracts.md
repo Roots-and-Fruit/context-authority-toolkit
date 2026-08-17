@@ -32,6 +32,20 @@ This document defines live behavior contracts that must remain true unless a cha
 - When a glossary term has a Category assigned, canonical DefinedTerm `inDefinedTermSet` uses that Category archive URL; otherwise it falls back to the glossary archive URL.
 - Category archive pages emit canonical `DefinedTermSet` schema (standalone and SEO transport adapters).
 
+## Abilities / MCP contract
+
+- Ability category: `context-authority-toolkit`.
+- Ability IDs: `list-terms`, `get-term`, `create-term`, `update-term`, `delete-term`, `list-term-meta`, `update-term-meta` (all namespaced under `context-authority-toolkit/`).
+- All seven abilities set `meta.show_in_rest` and `meta.mcp.public=true` / `type=tool` for MCP Adapter discovery.
+- Registration is skipped when `wp_register_ability` is unavailable (WP < 6.9 without the Abilities plugin). CAT core still requires only WP 6.4+.
+- Writes reuse `Cat_Glossary_Admin` sanitizers for `cat_alternatives`, `cat_tooltip_content`, `cat_same_as`, `cat_sources`, `cat_disable_autolinking`, and `cat_primary_category`.
+- `list-term-meta` / `get-term` return the full post meta map. `update-term` and `update-term-meta` can set arbitrary keys except editor-lock internals (`_edit_lock`, `_edit_last`, `_wp_trash_meta_*`, `_wp_desired_post_slug`). PHP objects are rejected.
+- Category assignment uses `categories` (IDs or slugs) and optional `primary_category` on create/update. Requires Categories enabled; `assign_terms` remains `edit_posts`.
+- `delete-term` trashes by default; `force=true` permanently deletes.
+- Permissions follow the CPT: list/create need `edit_posts`; get/update/meta need `edit_post`; delete needs `delete_post`. Not gated on `manage_options`.
+- Create defaults to `draft` unless `status` is supplied.
+- Tooltip text still comes only from `cat_tooltip_content`, never `post_content`.
+
 ## Markup and accessibility contract
 
 - Wrapped term renders as a button trigger inside `.cat-glossary-item-container`.

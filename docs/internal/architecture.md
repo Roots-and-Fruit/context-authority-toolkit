@@ -47,6 +47,10 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Rewrites term permalinks when category-in-URL mode is enabled; never emits synthetic segments
   - Rejects reserved Category slugs (`category`, `term-category`, `uncategorized`, current term base)
   - Maintains `cat_term_permalink_redirects` (capped 301 map served only on 404s)
+- `includes/class-cat-abilities.php`
+  - Registers Abilities API category `context-authority-toolkit` when `wp_register_ability` exists (WP 6.9+ or Abilities plugin)
+  - Exposes MCP-discoverable CRUD tools plus list/update of all term post meta and Category assignment
+  - Reuses `Cat_Glossary_Admin` sanitizers for CAT-owned keys; cache busts via existing `save_post_term` hook
 - `assets/js/glossary-hovercards.js`
   - Manages interaction states (`is-visible`, `is-pinned`)
   - Handles click, hover, focus, and escape-close logic
