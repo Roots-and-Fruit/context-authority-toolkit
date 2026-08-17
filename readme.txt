@@ -4,7 +4,7 @@ Tags: glossary, tooltips, schema, seo, aeo
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 0.10.0
+Stable tag: 0.11.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,9 @@ For full provenance and attribution details, see:
 * ATTRIBUTION.txt
 
 == Changelog ==
+
+= 0.11.0 =
+* Added Git Updater headers (Plugin URI, GitHub Plugin URI, Primary Branch, Release Asset) so sites can update from GitHub release zips.
 
 = 0.10.0 =
 * Added a Term → Settings screen for the glossary rewrite slug, Categories toggle, and whether Category appears in permalinks.

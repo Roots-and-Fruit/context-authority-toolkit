@@ -1,14 +1,18 @@
 <?php
 /**
  * Plugin Name:       Context & Authority Toolkit
+ * Plugin URI:        https://github.com/Roots-and-Fruit/context-authority-toolkit
  * Description:       Adds glossary-powered context tooltips for terms in post and comment content.
- * Version:           0.10.0
+ * Version:           0.11.0
  * Author:            Crucible CRM
  * Author URI:        https://cruciblecrm.com/
  * Forked from:       WordPress.org Glossary (Automattic and contributors)
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       context-authority-toolkit
+ * GitHub Plugin URI: https://github.com/Roots-and-Fruit/context-authority-toolkit
+ * Primary Branch:    main
+ * Release Asset:     true
  *
  * @package ContextAuthorityToolkit
  */
@@ -24,7 +28,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * and remains licensed under GPL-2.0-or-later. See ATTRIBUTION.txt.
  */
 
-define( 'CAT_TOOLKIT_VERSION', '0.10.0' );
+define( 'CAT_TOOLKIT_VERSION', '0.11.0' );
 define( 'CAT_TOOLKIT_FILE', __FILE__ );
 define( 'CAT_TOOLKIT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'CAT_TOOLKIT_URL', plugin_dir_url( __FILE__ ) );
