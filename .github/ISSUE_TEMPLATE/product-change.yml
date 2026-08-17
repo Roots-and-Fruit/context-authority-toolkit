@@ -6,14 +6,15 @@ body:
   - type: markdown
     attributes:
       value: |
-        Write this as a product change, not a dump of files to edit. Open with the elevator pitch. The next four sections describe the user. The last section should be detailed enough that a developer or agent can start in the right layer without a second discovery pass.
+        Write this as a product change, not a dump of files to edit. Open with the elevator pitch: currently vs after this issue. The next four sections describe the user. The last section should be detailed enough that a developer or agent can start in the right layer without a second discovery pass.
 
   - type: textarea
     id: tldr
     attributes:
       label: TL;DR
-      description: The elevator pitch. One or two sentences that say exactly what this issue is about and why it matters. Someone who reads only this section should know whether to open the rest.
-      placeholder: Glossary mentions are buttons, and the term permalink sits on a hidden Learn more link. Mentions need to be real links, or readers and answer engines never get a path to the definition.
+      description: |
+        The elevator pitch. Two sentences: what is true today, then what will be true when this issue is done. Start the first with “Currently,” and the second with “By addressing this issue,” so a reader never has to guess before vs after. Someone who reads only this section should know whether to open the rest.
+      placeholder: Currently, glossary mentions are buttons, and the term permalink sits on a hidden Learn more link. By addressing this issue, we make mentions real links so readers and answer engines get a path to the definition.
     validations:
       required: true
 
