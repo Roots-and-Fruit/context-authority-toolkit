@@ -1,0 +1,12 @@
+.wp-block-cat-toolkit-term-panel.cat-term-panel {
+	border: 1px dashed currentColor;
+	padding: 1rem;
+}
+
+.wp-block-cat-toolkit-term-panel .cat-term-panel__heading {
+	margin: 0 0 0.5rem;
+}
+
+.wp-block-cat-toolkit-term-panel .cat-term-panel__editor-note {
+	margin: 0;
+}

@@ -1,0 +1,16 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "cat-toolkit/term-panel",
+	"title": "CAT Term Panel",
+	"category": "cat-toolkit",
+	"icon": "index-card",
+	"description": "About-this-term panel: aliases, related terms, authority links, sources, and cite this.",
+	"textdomain": "context-authority-toolkit",
+	"supports": {
+		"html": false,
+		"multiple": false
+	},
+	"editorScript": "cat-term-panel-block-editor",
+	"editorStyle": "cat-term-panel-block-editor"
+}
