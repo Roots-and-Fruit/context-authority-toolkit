@@ -88,11 +88,11 @@ class Cat_Glossary_Handler {
 
 		$description_text = is_string( $glossary_item->description ) ? trim( $glossary_item->description ) : '';
 		$description_html = nl2br( esc_html( $description_text ) );
-		$learn_more_url = get_permalink( $glossary_item->id );
-		if ( ! empty( $learn_more_url ) ) {
+		$term_permalink   = get_permalink( $glossary_item->id );
+		if ( ! empty( $term_permalink ) ) {
 			$description_html .= sprintf(
 				'<br /><a class="cat-glossary-item-link" href="%1$s" rel="help">%2$s</a>',
-				esc_url( $learn_more_url ),
+				esc_url( $term_permalink ),
 				esc_html__( 'Learn more', 'context-authority-toolkit' )
 			);
 		}
@@ -109,7 +109,8 @@ class Cat_Glossary_Handler {
 		);
 
 		return sprintf(
-			'<span class="cat-glossary-item-container"><button type="button" id="%1$s" class="cat-glossary-item-trigger" aria-expanded="false" aria-haspopup="dialog" aria-controls="%2$s">%3$s</button>%4$s</span>',
+			'<span class="cat-glossary-item-container"><a href="%1$s" rel="help" id="%2$s" class="cat-glossary-item-trigger" aria-expanded="false" aria-haspopup="dialog" aria-controls="%3$s">%4$s</a>%5$s</span>',
+			esc_url( $term_permalink ),
 			esc_attr( $trigger_id ),
 			esc_attr( $panel_id ),
 			esc_html( $found_text ),

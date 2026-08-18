@@ -30,11 +30,12 @@ Run each scenario exactly as written. Any failed scenario is a gate FAIL.
      - After disabling the toggle and saving again, glossary terms are auto-linked.
 
 4. Open on click/tap
-   - Action: Click the first linked glossary term.
+   - Action: Click the first linked glossary term (the mention `<a class="cat-glossary-item-trigger">`).
    - PASS when:
-     - Popover appears.
+     - Popover appears (JS click pins/opens; does not navigate away while JS is active).
      - Popover includes `Learn more` link text.
      - `Learn more` opens that term's public URL.
+     - View-source / no-JS: the mention itself still has `href` to the term permalink with `rel="help"`.
 
 5. Single-open invariant
    - Action: Open first term popover, then click second term.
@@ -48,14 +49,15 @@ Run each scenario exactly as written. Any failed scenario is a gate FAIL.
      - Open popover closes.
 
 7. Escape close
-   - Action: Open a popover, press `Esc`.
+   - Action: Focus a glossary mention link, open its popover, press `Esc`.
    - PASS when:
      - Open popover closes.
+     - Focus returns to the mention trigger link.
 
 8. Keyboard focus behavior
-   - Action: Tab to a glossary term trigger and press `Enter`.
+   - Action: Tab to a glossary mention link trigger and press `Enter` (Space also acceptable).
    - PASS when:
-     - Popover opens.
+     - Popover opens (does not navigate away while JS is active).
      - Tabbing can reach `Learn more`.
      - Moving focus outside the active popover closes it.
 

@@ -15,7 +15,7 @@
 	font: inherit;
 	line-height: inherit;
 	cursor: help;
-	text-decoration: inherit;
+	text-decoration: none;
 }
 
 .cat-glossary-item-trigger:focus-visible {

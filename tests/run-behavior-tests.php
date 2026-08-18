@@ -212,7 +212,7 @@ cat_assert(
 	'Link cap test failed: expected only first two mentions to be wrapped.'
 );
 
-// Test 5: Interactive popover markup contract and Learn more permalink link.
+// Test 5: Interactive popover markup contract and crawlable mention permalink.
 $learn_more_post_id = cat_create_term(
 	'Permalink Term',
 	'Single term block content should not be used as tooltip.',
@@ -224,8 +224,23 @@ $filtered_link      = apply_filters( 'the_content', 'Permalink Term appears in c
 $expected_href      = esc_url( get_permalink( $learn_more_post_id ) );
 
 cat_assert(
-	strpos( $filtered_link, 'class="cat-glossary-item-trigger"' ) !== false,
-	'Popover contract failed: trigger button class is missing.'
+	preg_match( '/<a\b([^>]*)\bclass="cat-glossary-item-trigger"([^>]*)>/', $filtered_link, $trigger_open_match ) === 1,
+	'Popover contract failed: mention trigger must be an <a class="cat-glossary-item-trigger">.'
+);
+$trigger_attrs = isset( $trigger_open_match[1], $trigger_open_match[2] )
+	? $trigger_open_match[1] . $trigger_open_match[2]
+	: '';
+cat_assert(
+	strpos( $trigger_attrs, 'href="' . $expected_href . '"' ) !== false,
+	'Popover contract failed: mention trigger href must be the term permalink.'
+);
+cat_assert(
+	strpos( $trigger_attrs, 'rel="help"' ) !== false,
+	'Popover contract failed: mention trigger must include rel="help".'
+);
+cat_assert(
+	strpos( $filtered_link, '<button' ) === false,
+	'Popover contract failed: mention trigger must not render as a button.'
 );
 cat_assert(
 	strpos( $filtered_link, 'aria-expanded="false"' ) !== false && strpos( $filtered_link, 'aria-haspopup="dialog"' ) !== false,
@@ -254,6 +269,10 @@ if ( ! empty( $trigger_match[1] ) && ! empty( $panel_match[1] ) ) {
 cat_assert(
 	strpos( $filtered_link, 'role="dialog"' ) !== false && strpos( $filtered_link, ' hidden' ) !== false,
 	'Popover contract failed: panel dialog role/hidden state is missing.'
+);
+cat_assert(
+	cat_count_occurrences( $filtered_link, 'class="cat-glossary-item-container"' ) === 1,
+	'Popover contract failed: expected exactly one glossary mention wrapper.'
 );
 cat_assert(
 	cat_count_occurrences( $filtered_link, 'class="cat-glossary-item-link"' ) === 1,
