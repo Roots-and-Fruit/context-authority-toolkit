@@ -38,6 +38,7 @@ require_once CAT_TOOLKIT_DIR . 'includes/class-cat-glossary-handler.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-glossary-admin.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-glossary-hovercards.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-seo-peacekeeper.php';
+require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-single-chrome.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-cite-this-block.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-settings.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-category.php';

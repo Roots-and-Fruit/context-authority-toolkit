@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once ABSPATH . 'wp-admin/includes/user.php';
 
-if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Abilities' ) ) {
+if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Single_Chrome' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Abilities' ) ) {
 	echo "Plugin classes are unavailable. Ensure plugin is active before running tests.\n";
 	exit( 1 );
 }
@@ -513,6 +513,158 @@ cat_assert(
 	'SEO Peacekeeper test failed: canonical node should preserve citation objects.'
 );
 
+// Test 12b: Standalone term graph wraps DefinedTerm as WebPage.mainEntity.
+$standalone_graph = $seo_peacekeeper->build_standalone_term_graph( $schema_term_id );
+cat_assert(
+	2 === count( $standalone_graph )
+		&& ! empty( $standalone_graph[0]['@type'] ) && 'WebPage' === $standalone_graph[0]['@type']
+		&& ! empty( $standalone_graph[1]['@type'] ) && 'DefinedTerm' === $standalone_graph[1]['@type']
+		&& ! empty( $standalone_graph[0]['mainEntity'] )
+		&& $standalone_graph[0]['mainEntity'] === $standalone_graph[1]['@id']
+		&& ! empty( $standalone_graph[0]['url'] )
+		&& $standalone_graph[0]['url'] === $standalone_graph[1]['url'],
+	'SEO Peacekeeper test failed: standalone term graph should include WebPage.mainEntity pointing at DefinedTerm @id.'
+);
+cat_assert(
+	'DefinedTerm' === $seo_peacekeeper->get_canonical_term_schema( $schema_term_id )['@type'],
+	'SEO Peacekeeper test failed: get_canonical_term_schema must remain DefinedTerm-only.'
+);
+
+// Test 12c: alternateName / termCode mapping from cat_alternatives.
+$alias_term_id = cat_create_term(
+	'WordPress',
+	'<p>WordPress is open source software.</p>',
+	array( 'WP', 'WordPress', 'SaaS', 'wordpress.com' ),
+	'WordPress is free and open-source CMS software.'
+);
+$test_post_ids[] = $alias_term_id;
+$alias_schema    = $seo_peacekeeper->get_canonical_term_schema( $alias_term_id );
+cat_assert(
+	! empty( $alias_schema['alternateName'] )
+		&& in_array( 'WP', $alias_schema['alternateName'], true )
+		&& in_array( 'SaaS', $alias_schema['alternateName'], true )
+		&& in_array( 'wordpress.com', $alias_schema['alternateName'], true )
+		&& ! in_array( 'WordPress', $alias_schema['alternateName'], true ),
+	'SEO Peacekeeper test failed: alternateName should include aliases but not duplicate the title.'
+);
+cat_assert(
+	! empty( $alias_schema['termCode'] ) && 'WP' === $alias_schema['termCode'],
+	'SEO Peacekeeper test failed: uppercase acronym aliases should map to termCode.'
+);
+cat_assert(
+	! in_array( 'SaaS', (array) $alias_schema['termCode'], true ),
+	'SEO Peacekeeper test failed: mixed-case aliases like SaaS must stay alias-only (not termCode).'
+);
+
+$empty_alias_term_id = cat_create_term(
+	'No Aliases Term',
+	'<p>No Aliases Term body.</p>',
+	array(),
+	'A term without alternatives.'
+);
+$test_post_ids[]     = $empty_alias_term_id;
+$empty_alias_schema  = $seo_peacekeeper->get_canonical_term_schema( $empty_alias_term_id );
+cat_assert(
+	! isset( $empty_alias_schema['alternateName'] ) && ! isset( $empty_alias_schema['termCode'] ),
+	'SEO Peacekeeper test failed: empty alternatives must omit alternateName and termCode.'
+);
+
+// Test 12d: Visible lead + aliases chrome on term singles.
+$alias_term_post = get_post( $alias_term_id );
+setup_postdata( $alias_term_post );
+$alias_semantic = apply_filters(
+	'the_content',
+	'<p>WordPress is open source software used for publishing.</p>'
+);
+cat_assert(
+	false !== strpos( $alias_semantic, 'cat-term-single-lead' )
+		&& false !== strpos( $alias_semantic, 'WordPress is free and open-source CMS software.' )
+		&& false !== strpos( $alias_semantic, 'itemprop="description"' ),
+	'SEO Peacekeeper test failed: non-empty tooltip should render as visible lead inside description.'
+);
+cat_assert(
+	false !== strpos( $alias_semantic, 'Also known as' )
+		&& false !== strpos( $alias_semantic, 'itemprop="alternateName">WP</span>' )
+		&& false !== strpos( $alias_semantic, 'itemprop="alternateName">SaaS</span>' ),
+	'SEO Peacekeeper test failed: aliases should render with alternateName microdata.'
+);
+cat_assert(
+	$alias_schema['description'] === 'WordPress is free and open-source CMS software.',
+	'SEO Peacekeeper test failed: JSON-LD description must remain tooltip-owned.'
+);
+
+$dup_lead_term_id = cat_create_term(
+	'Duplicate Lead Term',
+	'<p>Same lead sentence already in the body.</p><p>More detail follows.</p>',
+	array(),
+	'Same lead sentence already in the body.'
+);
+$test_post_ids[] = $dup_lead_term_id;
+$dup_lead_post   = get_post( $dup_lead_term_id );
+setup_postdata( $dup_lead_post );
+$dup_lead_html = apply_filters(
+	'the_content',
+	'<p>Same lead sentence already in the body.</p><p>More detail follows.</p>'
+);
+cat_assert(
+	false === strpos( $dup_lead_html, 'cat-term-single-lead' )
+		&& 1 === substr_count( $dup_lead_html, 'Same lead sentence already in the body.' ),
+	'SEO Peacekeeper test failed: identical body start must not duplicate the tooltip lead.'
+);
+
+$empty_tooltip_term_id = cat_create_term(
+	'Empty Tooltip Term',
+	'<p>Empty Tooltip Term has body only.</p>',
+	array(),
+	''
+);
+$test_post_ids[] = $empty_tooltip_term_id;
+$empty_tip_post  = get_post( $empty_tooltip_term_id );
+setup_postdata( $empty_tip_post );
+$empty_tip_html = apply_filters(
+	'the_content',
+	'<p>Empty Tooltip Term has body only.</p>'
+);
+cat_assert(
+	false === strpos( $empty_tip_html, 'cat-term-single-lead' )
+		&& false === strpos( $empty_tip_html, 'cat-term-single-aliases' ),
+	'SEO Peacekeeper test failed: empty tooltip/alternatives must omit lead and alias chrome.'
+);
+
+// Test 12e: Adapter-style graph must not emit a second WebPage when one exists.
+$adapter_stub_graph = array(
+	array(
+		'@type' => 'WebPage',
+		'url'   => get_permalink( $alias_term_id ),
+	),
+);
+$adapter_stub_graph = $seo_peacekeeper->attach_main_entity_to_graph( $adapter_stub_graph, $alias_schema['@id'] );
+$adapter_stub_graph[] = $alias_schema;
+$webpage_count = 0;
+$defined_count = 0;
+$adapter_main  = '';
+foreach ( $adapter_stub_graph as $adapter_node ) {
+	if ( ! is_array( $adapter_node ) ) {
+		continue;
+	}
+	$type = isset( $adapter_node['@type'] ) ? $adapter_node['@type'] : '';
+	if ( 'WebPage' === $type ) {
+		++$webpage_count;
+		$adapter_main = isset( $adapter_node['mainEntity'] ) ? (string) $adapter_node['mainEntity'] : '';
+	}
+	if ( 'DefinedTerm' === $type ) {
+		++$defined_count;
+	}
+}
+cat_assert(
+	1 === $webpage_count && 1 === $defined_count && $adapter_main === $alias_schema['@id'],
+	'SEO Peacekeeper test failed: injecting CAT into a graph that already has WebPage must not yield two WebPages.'
+);
+
+// Restore schema term context for later semantic tests that reuse it.
+$schema_term_post = get_post( $schema_term_id );
+setup_postdata( $schema_term_post );
+
 // Test 13: Semantic wrapper should inject dfn name markup in first paragraph only.
 $schema_term_post = get_post( $schema_term_id );
 setup_postdata( $schema_term_post );
@@ -585,6 +737,40 @@ $rank_math_node     = end( $rank_math_filtered['@graph'] );
 cat_assert(
 	! empty( $rank_math_node['sameAs'] ) && ! empty( $rank_math_node['citation'] ),
 	'SEO Peacekeeper test failed: Rank Math adapter should keep sameAs and citation data.'
+);
+
+// Test 15b: Rank Math with an existing WebPage sets mainEntity and does not add a second WebPage.
+$schema_term_for_rm = get_post( $schema_term_id );
+setup_postdata( $schema_term_for_rm );
+$rm_existing = array(
+	'@graph' => array(
+		array(
+			'@type' => 'WebPage',
+			'url'   => get_permalink( $schema_term_id ),
+		),
+	),
+);
+$rm_with_page = $seo_peacekeeper->inject_rank_math_json_ld( $rm_existing, null );
+$rm_pages     = 0;
+$rm_terms     = 0;
+$rm_main      = '';
+foreach ( $rm_with_page['@graph'] as $rm_node ) {
+	if ( ! is_array( $rm_node ) ) {
+		continue;
+	}
+	$rm_type = isset( $rm_node['@type'] ) ? $rm_node['@type'] : '';
+	if ( 'WebPage' === $rm_type ) {
+		++$rm_pages;
+		$rm_main = isset( $rm_node['mainEntity'] ) ? (string) $rm_node['mainEntity'] : '';
+	}
+	if ( 'DefinedTerm' === $rm_type ) {
+		++$rm_terms;
+	}
+}
+$expected_rm_id = $seo_peacekeeper->get_canonical_term_schema( $schema_term_id )['@id'];
+cat_assert(
+	1 === $rm_pages && 1 === $rm_terms && $rm_main === $expected_rm_id,
+	'SEO Peacekeeper test failed: Rank Math must attach mainEntity to the existing WebPage without duplicating WebPage.'
 );
 
 // Test 16: Term settings defaults and sanitizers.

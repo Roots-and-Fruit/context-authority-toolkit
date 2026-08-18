@@ -46,15 +46,25 @@ class Cat_SEO_Peacekeeper {
 	const SEOPRESS_SCHEMA_FILTER = 'seopress_schemas_auto_article_json';
 
 	/**
+	 * Term-single chrome renderer.
+	 *
+	 * @var Cat_Term_Single_Chrome
+	 */
+	private $term_chrome;
+
+	/**
 	 * Register module hooks.
 	 */
 	public function __construct() {
+		$this->term_chrome = new Cat_Term_Single_Chrome();
+
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_menu', array( $this, 'register_settings_page' ) );
 		add_action( 'wp_head', array( $this, 'output_standalone_json_ld' ), 99 );
 		add_filter( 'the_content', array( $this, 'add_semantic_term_markup' ), 30 );
 		add_filter( 'wpseo_metadesc', array( $this, 'filter_yoast_meta_description' ) );
 		add_filter( 'wpseo_schema_graph_pieces', array( $this, 'inject_yoast_graph_piece' ), 20, 2 );
+		add_filter( 'wpseo_schema_graph', array( $this, 'attach_yoast_main_entity' ), 20, 2 );
 		add_filter( 'wpseo_schema_needs_breadcrumb', array( $this, 'filter_yoast_breadcrumb_setting' ) );
 		add_filter( 'rank_math/frontend/description', array( $this, 'filter_rank_math_meta_description' ) );
 		add_filter( 'rank_math/json_ld', array( $this, 'inject_rank_math_json_ld' ), 20, 2 );
@@ -303,6 +313,7 @@ class Cat_SEO_Peacekeeper {
 		$same_as_raw = get_post_meta( $term_post->ID, Cat_Glossary_Admin::SAME_AS_META_KEY, true );
 		$sources_raw = get_post_meta( $term_post->ID, Cat_Glossary_Admin::SOURCES_META_KEY, true );
 		$read_aloud  = $this->prepare_read_aloud_text( $description ? $description : (string) $term_post->post_content );
+		$alias_props = $this->map_alternatives_to_schema( $term_post->ID, $name );
 		$canonical   = array(
 			'@type'            => 'DefinedTerm',
 			'@id'              => trailingslashit( (string) $term_url ) . '#definedterm',
@@ -310,13 +321,75 @@ class Cat_SEO_Peacekeeper {
 			'description'      => $description ? $description : $read_aloud,
 			'url'              => (string) $term_url,
 			'inDefinedTermSet' => (string) $defined_set,
+			'alternateName'    => $alias_props['alternateName'],
 			'sameAs'           => $this->normalize_same_as_array( $same_as_raw ),
 			'citation'         => $this->normalize_citation_array( $sources_raw ),
 		);
 
+		if ( ! empty( $alias_props['termCode'] ) ) {
+			$canonical['termCode'] = ( 1 === count( $alias_props['termCode'] ) )
+				? $alias_props['termCode'][0]
+				: $alias_props['termCode'];
+		}
+
 		$canonical = apply_filters( 'context_authority_toolkit_schema_canonical_term_data', $canonical, $term_post );
 
 		return $this->remove_empty_schema_properties( $canonical );
+	}
+
+	/**
+	 * Map cat_alternatives into alternateName / termCode schema properties.
+	 *
+	 * Title duplicates are skipped. Abbreviations (2–6 chars, A–Z/0–9 only,
+	 * fully uppercase) also become termCode.
+	 *
+	 * @param int    $term_post_id Term post ID.
+	 * @param string $term_title   Unused; retained for call-site clarity.
+	 * @return array{alternateName:string[],termCode:string[]}
+	 */
+	public function map_alternatives_to_schema( $term_post_id, $term_title = '' ) {
+		unset( $term_title );
+
+		$chrome  = $this->term_chrome instanceof Cat_Term_Single_Chrome ? $this->term_chrome : new Cat_Term_Single_Chrome();
+		$aliases = $chrome->get_display_aliases( $term_post_id );
+
+		$alternate_name = array();
+		$term_codes     = array();
+
+		foreach ( $aliases as $alias ) {
+			$alternate_name[] = $alias;
+			if ( $chrome->is_term_code_alias( $alias ) ) {
+				$term_codes[] = $alias;
+			}
+		}
+
+		return array(
+			'alternateName' => array_values( array_unique( $alternate_name ) ),
+			'termCode'      => array_values( array_unique( $term_codes ) ),
+		);
+	}
+
+	/**
+	 * Build standalone @graph nodes for a term single (WebPage + DefinedTerm).
+	 *
+	 * @param int $term_post_id Term post ID.
+	 * @return array[]
+	 */
+	public function build_standalone_term_graph( $term_post_id ) {
+		$defined_term = $this->get_canonical_term_schema( $term_post_id );
+		if ( empty( $defined_term ) ) {
+			return array();
+		}
+
+		$webpage = array(
+			'@type'      => 'WebPage',
+			'url'        => isset( $defined_term['url'] ) ? (string) $defined_term['url'] : '',
+			'mainEntity' => isset( $defined_term['@id'] ) ? (string) $defined_term['@id'] : '',
+		);
+
+		$webpage = $this->remove_empty_schema_properties( $webpage );
+
+		return array( $webpage, $defined_term );
 	}
 
 	/**
@@ -412,21 +485,24 @@ class Cat_SEO_Peacekeeper {
 			return;
 		}
 
-		$schema_node = array();
+		$graph_nodes = array();
 		$term_id     = $this->get_context_term_post_id();
 		if ( $term_id > 0 ) {
-			$schema_node = $this->get_canonical_term_schema( $term_id );
+			$graph_nodes = $this->build_standalone_term_graph( $term_id );
 		} else {
-			$schema_node = $this->get_context_defined_term_set_schema();
+			$set_node = $this->get_context_defined_term_set_schema();
+			if ( ! empty( $set_node ) ) {
+				$graph_nodes = array( $set_node );
+			}
 		}
 
-		if ( empty( $schema_node ) ) {
+		if ( empty( $graph_nodes ) ) {
 			return;
 		}
 
 		$graph = array(
 			'@context' => 'https://schema.org',
-			'@graph'   => array( $schema_node ),
+			'@graph'   => $graph_nodes,
 		);
 
 		echo '<script type="application/ld+json">' . wp_json_encode( $graph, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) . '</script>';
@@ -440,6 +516,8 @@ class Cat_SEO_Peacekeeper {
 	 * @return array
 	 */
 	public function inject_yoast_graph_piece( $pieces, $context ) {
+		unset( $context );
+
 		if ( 'yoast' !== $this->resolve_transport_mode() ) {
 			return $pieces;
 		}
@@ -496,6 +574,31 @@ class Cat_SEO_Peacekeeper {
 	}
 
 	/**
+	 * Attach DefinedTerm mainEntity onto Yoast's existing page node.
+	 *
+	 * Prefer mutating the SEO plugin WebPage (or similar) instead of appending
+	 * a second WebPage. DefinedTerm itself is still added via graph pieces.
+	 *
+	 * @param array $graph   Assembled Yoast schema graph.
+	 * @param mixed $context Yoast schema context object.
+	 * @return array
+	 */
+	public function attach_yoast_main_entity( $graph, $context ) {
+		unset( $context );
+
+		if ( 'yoast' !== $this->resolve_transport_mode() || ! is_array( $graph ) ) {
+			return $graph;
+		}
+
+		$node = $this->get_canonical_term_schema( $this->get_context_term_post_id() );
+		if ( empty( $node ) || empty( $node['@id'] ) ) {
+			return $graph;
+		}
+
+		return $this->attach_main_entity_to_graph( $graph, (string) $node['@id'] );
+	}
+
+	/**
 	 * Inject CAT-defined node into Rank Math JSON-LD payload.
 	 *
 	 * @param array $data   Existing JSON-LD data.
@@ -503,6 +606,8 @@ class Cat_SEO_Peacekeeper {
 	 * @return array
 	 */
 	public function inject_rank_math_json_ld( $data, $jsonld ) {
+		unset( $jsonld );
+
 		if ( 'rank-math' !== $this->resolve_transport_mode() ) {
 			return $data;
 		}
@@ -516,11 +621,17 @@ class Cat_SEO_Peacekeeper {
 		}
 
 		if ( isset( $data['@graph'] ) && is_array( $data['@graph'] ) ) {
+			if ( ! empty( $node['@id'] ) && 'DefinedTerm' === ( isset( $node['@type'] ) ? $node['@type'] : '' ) ) {
+				$data['@graph'] = $this->attach_main_entity_to_graph( $data['@graph'], (string) $node['@id'] );
+			}
 			$data['@graph'][] = $node;
 			return $data;
 		}
 
 		if ( $this->is_sequential_array( $data ) ) {
+			if ( ! empty( $node['@id'] ) && 'DefinedTerm' === ( isset( $node['@type'] ) ? $node['@type'] : '' ) ) {
+				$data = $this->attach_main_entity_to_graph( $data, (string) $node['@id'] );
+			}
 			$data[] = $node;
 			return $data;
 		}
@@ -549,11 +660,17 @@ class Cat_SEO_Peacekeeper {
 		}
 
 		if ( isset( $schema['@graph'] ) && is_array( $schema['@graph'] ) ) {
+			if ( ! empty( $node['@id'] ) && 'DefinedTerm' === ( isset( $node['@type'] ) ? $node['@type'] : '' ) ) {
+				$schema['@graph'] = $this->attach_main_entity_to_graph( $schema['@graph'], (string) $node['@id'] );
+			}
 			$schema['@graph'][] = $node;
 			return $schema;
 		}
 
 		if ( $this->is_sequential_array( $schema ) ) {
+			if ( ! empty( $node['@id'] ) && 'DefinedTerm' === ( isset( $node['@type'] ) ? $node['@type'] : '' ) ) {
+				$schema = $this->attach_main_entity_to_graph( $schema, (string) $node['@id'] );
+			}
 			$schema[] = $node;
 			return $schema;
 		}
@@ -605,6 +722,9 @@ class Cat_SEO_Peacekeeper {
 			return $content;
 		}
 
+		$chrome        = $this->term_chrome instanceof Cat_Term_Single_Chrome ? $this->term_chrome : new Cat_Term_Single_Chrome();
+		$lead_html     = $chrome->render_lead_html( $term_id, $content );
+		$aliases_html  = $chrome->render_aliases_html( $term_id );
 		$term_label_id = sprintf( 'cat-defined-term-name-%d', (int) $term_id );
 		$semantic      = $this->inject_defined_term_name_markup( $content, $title, $term_label_id );
 		$name_id       = isset( $semantic['name_id'] ) ? trim( (string) $semantic['name_id'] ) : '';
@@ -616,9 +736,11 @@ class Cat_SEO_Peacekeeper {
 		}
 
 		return sprintf(
-			'<article%1$s><div itemprop="description" role="definition">%2$s</div></article>',
+			'<article%1$s><div itemprop="description" role="definition">%2$s%3$s</div>%4$s</article>',
 			$article_attributes,
-			$description
+			$lead_html,
+			$description,
+			$aliases_html
 		);
 	}
 
@@ -888,6 +1010,70 @@ class Cat_SEO_Peacekeeper {
 		}
 
 		return Cat_Term_Category::get_canonical_defined_term_set_schema( $category );
+	}
+
+	/**
+	 * Set mainEntity on the first WebPage-like node in a schema graph.
+	 *
+	 * Does not append a WebPage when none exists.
+	 *
+	 * @param array  $graph             Schema graph nodes.
+	 * @param string $defined_term_id   DefinedTerm @id.
+	 * @return array
+	 */
+	public function attach_main_entity_to_graph( array $graph, $defined_term_id ) {
+		$defined_term_id = trim( (string) $defined_term_id );
+		if ( '' === $defined_term_id ) {
+			return $graph;
+		}
+
+		foreach ( $graph as $index => $node ) {
+			if ( ! is_array( $node ) ) {
+				continue;
+			}
+
+			$type = isset( $node['@type'] ) ? $node['@type'] : '';
+			if ( ! $this->is_schema_page_type( $type ) ) {
+				continue;
+			}
+
+			$graph[ $index ]['mainEntity'] = $defined_term_id;
+			return $graph;
+		}
+
+		return $graph;
+	}
+
+	/**
+	 * Whether a schema @type is a page document type (WebPage or similar).
+	 *
+	 * @param mixed $type Schema @type string or list.
+	 * @return bool
+	 */
+	public function is_schema_page_type( $type ) {
+		$types      = is_array( $type ) ? $type : array( $type );
+		$page_types = array(
+			'WebPage',
+			'CollectionPage',
+			'ItemPage',
+			'AboutPage',
+			'ProfilePage',
+			'ContactPage',
+			'SearchResultsPage',
+			'FAQPage',
+			'QAPage',
+		);
+
+		foreach ( $types as $candidate ) {
+			if ( ! is_string( $candidate ) ) {
+				continue;
+			}
+			if ( in_array( $candidate, $page_types, true ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

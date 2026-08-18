@@ -26,11 +26,16 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Skips excluded HTML contexts
   - Wraps first in-content term match with trigger/panel markup
 - `includes/class-cat-seo-peacekeeper.php`
-  - Builds canonical `DefinedTerm` data from CAT-owned CPT/meta fields
+  - Builds canonical `DefinedTerm` data from CAT-owned CPT/meta fields (including `alternateName` / `termCode` from alternatives)
   - Selects schema transport mode (standalone/Yoast/Rank Math/SEOPress/off)
   - Normalizes schema URL/date fields before output or adapter handoff
-  - Injects schema into SEO plugin hooks or prints standalone JSON-LD
+  - Injects schema into SEO plugin hooks or prints standalone JSON-LD (`WebPage` + `mainEntity` on term singles)
   - Adds semantic microdata wrappers (`aria-labelledby` + `dfn` id linkage) and read-aloud sanitization pipeline
+  - Delegates visible lead/alias HTML to `Cat_Term_Single_Chrome`
+- `includes/class-cat-term-single-chrome.php`
+  - Renders term-single visitor chrome: tooltip lead and “Also known as” aliases
+  - Public helpers for display aliases, termCode detection, and lead-duplication comparison
+  - Extended by later phases (related terms / classic sidebar stay out of this class until those issues)
 - `includes/class-cat-glossary-hovercards.php`
   - Enqueues frontend CSS/JS assets
 - `includes/class-cat-term-settings.php`
