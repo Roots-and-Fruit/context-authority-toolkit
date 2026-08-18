@@ -2190,6 +2190,16 @@ cat_assert(
 	'Term panel test failed: block pattern cat-toolkit/term-panel must be registered.'
 );
 
+$panel_block_type = WP_Block_Type_Registry::get_instance()->get_registered(
+	\ContextAuthorityToolkit\Cat_Term_Panel::BLOCK_NAME
+);
+$has_editor_script = ! empty( $panel_block_type->editor_script )
+	|| ( isset( $panel_block_type->editor_script_handles ) && ! empty( $panel_block_type->editor_script_handles ) );
+cat_assert(
+	$panel_block_type instanceof WP_Block_Type && $has_editor_script,
+	'Term panel test failed: cat-toolkit/term-panel must register an editor script for Site Editor.'
+);
+
 $default_types = get_default_block_template_types();
 cat_assert(
 	isset( $default_types[ \ContextAuthorityToolkit\Cat_Term_Panel::BLOCK_TEMPLATE_SLUG ] ),

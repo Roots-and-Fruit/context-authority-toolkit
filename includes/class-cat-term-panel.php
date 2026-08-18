@@ -203,17 +203,26 @@ class Cat_Term_Panel {
 			return;
 		}
 
+		wp_register_script(
+			'cat-term-panel-block-editor',
+			CAT_TOOLKIT_URL . 'assets/blocks/cat-term-panel/index.js',
+			array( 'wp-block-editor', 'wp-blocks', 'wp-element', 'wp-i18n' ),
+			CAT_TOOLKIT_VERSION,
+			true
+		);
+
+		wp_register_style(
+			'cat-term-panel-block-editor',
+			CAT_TOOLKIT_URL . 'assets/blocks/cat-term-panel/editor.css',
+			array(),
+			CAT_TOOLKIT_VERSION
+		);
+
 		if ( ! \WP_Block_Type_Registry::get_instance()->is_registered( self::BLOCK_NAME ) ) {
 			register_block_type(
-				self::BLOCK_NAME,
+				CAT_TOOLKIT_DIR . 'assets/blocks/cat-term-panel',
 				array(
-					'title'           => __( 'CAT Term Panel', 'context-authority-toolkit' ),
-					'description'     => __( 'About-this-term panel: aliases, related terms, authority links, sources, and cite this.', 'context-authority-toolkit' ),
-					'category'        => Cat_Cite_This_Block::BLOCK_CATEGORY,
 					'render_callback' => array( $this, 'render_panel_block' ),
-					'supports'        => array(
-						'html' => false,
-					),
 				)
 			);
 		}

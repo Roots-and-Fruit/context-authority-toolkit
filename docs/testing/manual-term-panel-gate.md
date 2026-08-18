@@ -19,7 +19,7 @@ Manual smoke for Context & Authority Toolkit term panel placement. No browser au
 1. Activate a block theme. Do not edit Site Editor templates first.
 2. Publish/view a glossary `term` with the same meta as above.
 3. Front end: expect a two-column layout (definition + `aside.cat-term-panel`). Cite-this should still work.
-4. Admin-bar **Edit Site** from that term URL must open **Single Term**, not **Single Posts**.
+4. Admin-bar **Edit Site** from that term URL must open **Single Term**, not **Single Posts**. The complementary column must show the CAT Term Panel placeholder, not a missing-block warning.
 5. In Site Editor → Single Term → Design: CAT two-column / stacked starters may appear. They must **not** appear on Single Posts Design (those stay theme `single` / `posts` patterns).
 6. Customize and save Single Term — the saved copy overrides the plugin default.
 7. Classic sidebar/content injection must still **not** run on the block theme.
