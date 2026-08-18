@@ -26,6 +26,7 @@
 	var SOURCES_META_KEY = window.catToolkitEditor && window.catToolkitEditor.sourcesMeta ? window.catToolkitEditor.sourcesMeta : 'cat_sources';
 	var RELATED_TERMS_META_KEY = window.catToolkitEditor && window.catToolkitEditor.relatedTermsMeta ? window.catToolkitEditor.relatedTermsMeta : 'cat_related_terms';
 	var RELATED_TERMS_MAX = window.catToolkitEditor && window.catToolkitEditor.relatedTermsMax ? window.catToolkitEditor.relatedTermsMax : 8;
+	var WIKIDATA_SEARCH_PATH = window.catToolkitEditor && window.catToolkitEditor.wikidataSearchPath ? window.catToolkitEditor.wikidataSearchPath : '/context-authority-toolkit/v1/wikidata-search';
 	var PUBLIC_DISABLE_AUTOLINK_META_KEY = window.catToolkitEditor && window.catToolkitEditor.disableAutolinkMeta ? window.catToolkitEditor.disableAutolinkMeta : 'cat_disable_autolinking';
 	var PUBLIC_POST_TYPES = window.catToolkitEditor && Array.isArray( window.catToolkitEditor.publicPostTypes ) ? window.catToolkitEditor.publicPostTypes : [ 'post', 'page', 'term' ];
 
@@ -251,6 +252,136 @@
 		} );
 	}
 
+	function WikidataSameAsLookup( props ) {
+		var currentPostId = props.currentPostId || 0;
+		var sameAsLinks = Array.isArray( props.sameAsLinks ) ? props.sameAsLinks.slice() : [];
+		var setMetaValue = props.setMetaValue;
+		var searchState = useState( '' );
+		var search = searchState[ 0 ];
+		var setSearch = searchState[ 1 ];
+		var resultsState = useState( [] );
+		var results = resultsState[ 0 ];
+		var setResults = resultsState[ 1 ];
+		var statusState = useState( '' );
+		var status = statusState[ 0 ];
+		var setStatus = statusState[ 1 ];
+		var loadingState = useState( false );
+		var isLoading = loadingState[ 0 ];
+		var setLoading = loadingState[ 1 ];
+
+		var clearResults = function() {
+			setResults( [] );
+			setStatus( '' );
+		};
+
+		var runSearch = function() {
+			var query = ( search || '' ).trim();
+			if ( ! query || ! currentPostId ) {
+				setResults( [] );
+				setStatus( __( 'Enter a search term to look up Wikidata.', 'context-authority-toolkit' ) );
+				return;
+			}
+
+			setLoading( true );
+			setStatus( '' );
+			apiFetch( {
+				path: WIKIDATA_SEARCH_PATH + '?post_id=' + encodeURIComponent( currentPostId ) + '&search=' + encodeURIComponent( query )
+			} ).then( function( response ) {
+				var nextResults = response && Array.isArray( response.results ) ? response.results : [];
+				setResults( nextResults );
+				setStatus( nextResults.length ? '' : __( 'No Wikidata matches found.', 'context-authority-toolkit' ) );
+			} ).catch( function() {
+				setResults( [] );
+				setStatus( __( 'Wikidata lookup failed. Try again or paste a URL manually.', 'context-authority-toolkit' ) );
+			} ).then( function() {
+				setLoading( false );
+			} );
+		};
+
+		var pickResult = function( result ) {
+			if ( ! result || ! result.url ) {
+				return;
+			}
+
+			var nextLinks = sameAsLinks.slice();
+			if ( nextLinks.indexOf( result.url ) === -1 ) {
+				nextLinks.push( result.url );
+				setMetaValue( SAME_AS_META_KEY, nextLinks );
+			}
+
+			clearResults();
+			setSearch( '' );
+		};
+
+		var resultNodes = results.map( function( result ) {
+			var key = result.id || result.url;
+			var label = result.label || result.id || result.url;
+			var description = result.description ? ' — ' + result.description : '';
+
+			return createElement(
+				'li',
+				{
+					key: key,
+					style: { marginBottom: '8px' }
+				},
+				createElement(
+					'div',
+					{ style: { marginBottom: '4px' } },
+					createElement( 'strong', null, label ),
+					description
+				),
+				createElement(
+					'div',
+					{ style: { marginBottom: '4px', wordBreak: 'break-all' } },
+					result.url
+				),
+				createElement( Button, {
+					isSecondary: true,
+					onClick: function() {
+						pickResult( result );
+					}
+				}, __( 'Add to Related Authority Links', 'context-authority-toolkit' ) )
+			);
+		} );
+
+		return createElement(
+			'div',
+			{
+				style: { width: '100%', marginTop: '12px' }
+			},
+			createElement( 'strong', null, __( 'Search Wikidata', 'context-authority-toolkit' ) ),
+			createElement(
+				'p',
+				{ style: { marginTop: '8px', marginBottom: '8px' } },
+				__( 'Find a Wikidata entity and add its URL to Related Authority Links. Nothing is added until you pick a result.', 'context-authority-toolkit' )
+			),
+			createElement( TextControl, {
+				label: __( 'Wikidata search', 'context-authority-toolkit' ),
+				value: search,
+				onChange: function( value ) {
+					setSearch( value || '' );
+				}
+			} ),
+			createElement(
+				'div',
+				{ style: { display: 'flex', gap: '8px', marginBottom: '8px' } },
+				createElement( Button, {
+					isPrimary: true,
+					isBusy: isLoading,
+					disabled: isLoading,
+					onClick: runSearch
+				}, __( 'Search Wikidata', 'context-authority-toolkit' ) ),
+				createElement( Button, {
+					isSecondary: true,
+					disabled: isLoading,
+					onClick: clearResults
+				}, __( 'Clear results', 'context-authority-toolkit' ) )
+			),
+			status ? createElement( 'p', null, status ) : null,
+			resultNodes.length ? createElement( 'ul', { style: { margin: '0', paddingLeft: '18px' } }, resultNodes ) : null
+		);
+	}
+
 	function TermSidebarFields() {
 		var postType = useSelect( function( select ) {
 			return select( 'core/editor' ).getCurrentPostType();
@@ -457,16 +588,25 @@
 				createElement(
 					PanelRow,
 					null,
-					createElement( TextareaControl, {
-						label: __( 'Related Authority Links', 'context-authority-toolkit' ),
-						help: invalidSameAsCount > 0 ? __( 'One or more links look invalid. Use full URLs (http/https), one per line.', 'context-authority-toolkit' ) : __( 'Add links to trusted pages about this term (for example: Wikipedia, industry standards, or official docs). Use one URL per line (or comma-separated).', 'context-authority-toolkit' ),
-						value: sameAsLinks.join( '\n' ),
-						rows: 4,
-						placeholder: __( 'https://en.wikipedia.org/wiki/...\nhttps://www.example.org/glossary/...', 'context-authority-toolkit' ),
-						onChange: function( value ) {
-							setMetaValue( SAME_AS_META_KEY, parseSameAs( value ) );
-						}
-					} )
+					createElement(
+						'div',
+						{ style: { width: '100%' } },
+						createElement( TextareaControl, {
+							label: __( 'Related Authority Links', 'context-authority-toolkit' ),
+							help: invalidSameAsCount > 0 ? __( 'One or more links look invalid. Use full URLs (http/https), one per line.', 'context-authority-toolkit' ) : __( 'Add links to trusted pages about this term (for example: Wikipedia, industry standards, or official docs). Use one URL per line (or comma-separated).', 'context-authority-toolkit' ),
+							value: sameAsLinks.join( '\n' ),
+							rows: 4,
+							placeholder: __( 'https://en.wikipedia.org/wiki/...\nhttps://www.example.org/glossary/...', 'context-authority-toolkit' ),
+							onChange: function( value ) {
+								setMetaValue( SAME_AS_META_KEY, parseSameAs( value ) );
+							}
+						} ),
+						createElement( WikidataSameAsLookup, {
+							currentPostId: currentPostId,
+							sameAsLinks: sameAsLinks,
+							setMetaValue: setMetaValue
+						} )
+					)
 				),
 				createElement(
 					PanelRow,

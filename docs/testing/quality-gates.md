@@ -33,7 +33,8 @@ wp eval-file .\tests\run-behavior-tests.php
 The behavior harness is expected to cover schema/accessibility invariants, including:
 - semantic wrapper linkage (`aria-labelledby` tied to the term `dfn` id),
 - canonical schema parity (`sameAs` and `citation` preservation),
-- strict URL/date sanitization behavior for source metadata.
+- strict URL/date sanitization behavior for source metadata,
+- editor Wikidata lookup permission/SSRF guards with mocked `pre_http_request` (no live Wikidata calls).
 
 ### 3) Plugin Check gate
 

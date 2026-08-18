@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once ABSPATH . 'wp-admin/includes/user.php';
 
-if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Single_Chrome' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Abilities' ) ) {
+if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Single_Chrome' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Abilities' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Wikidata_Lookup' ) ) {
 	echo "Plugin classes are unavailable. Ensure plugin is active before running tests.\n";
 	exit( 1 );
 }
@@ -373,6 +373,19 @@ $sanitized_same_as = $admin_handler->sanitize_same_as_meta(
 cat_assert(
 	array( 'https://example.com/a', 'https://example.com/b' ) === $sanitized_same_as,
 	'Sanitizer test failed: sameAs sanitizer should keep only unique valid URLs.'
+);
+$sanitized_same_as_wikidata = $admin_handler->sanitize_same_as_meta(
+	array(
+		'https://www.wikidata.org/wiki/Q42',
+		'ftp://example.com/bad',
+		'https://www.wikidata.org/wiki/Q42',
+		'javascript:alert(1)',
+		'https://en.wikipedia.org/wiki/WordPress',
+	)
+);
+cat_assert(
+	array( 'https://www.wikidata.org/wiki/Q42', 'https://en.wikipedia.org/wiki/WordPress' ) === $sanitized_same_as_wikidata,
+	'Sanitizer test failed: sameAs sanitizer should keep unique public http(s) URLs including Wikidata and reject non-public schemes.'
 );
 $sanitized_sources = $admin_handler->sanitize_sources_meta(
 	array(
@@ -1891,6 +1904,153 @@ if ( null === $ability_saved_categories ) {
 	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED );
 } else {
 	update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED, $ability_saved_categories );
+}
+
+// Test 27: Editor-only Wikidata sameAs lookup (mocked HTTP; never hits live Wikidata).
+if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Wikidata_Lookup' ) ) {
+	cat_assert( false, 'Wikidata lookup test failed: Cat_Wikidata_Lookup class is unavailable.' );
+} else {
+	$wikidata = new \ContextAuthorityToolkit\Cat_Wikidata_Lookup();
+	$wikidata_term_id = cat_create_term( 'Wikidata Lookup Term', '<p>Wikidata lookup host.</p>', array(), 'Wikidata tip' );
+	$test_post_ids[]  = $wikidata_term_id;
+	$wikidata_marker  = 'before-wikidata-lookup';
+	update_post_meta( $wikidata_term_id, \ContextAuthorityToolkit\Cat_Glossary_Admin::SAME_AS_META_KEY, array( 'https://example.com/keep-me' ) );
+	update_post_meta( $wikidata_term_id, '_cat_wikidata_test_marker', $wikidata_marker );
+
+	$blocked_host_url = $wikidata->build_api_url( 'WordPress', 'en' );
+	cat_assert(
+		! is_wp_error( $blocked_host_url ) && false !== strpos( (string) $blocked_host_url, 'https://www.wikidata.org/w/api.php' ),
+		'Wikidata lookup test failed: API URL builder must target www.wikidata.org.'
+	);
+	$parsed_api = wp_parse_url( (string) $blocked_host_url );
+	cat_assert(
+		is_array( $parsed_api ) && ! empty( $parsed_api['host'] ) && $wikidata->is_allowed_host( $parsed_api['host'] ),
+		'Wikidata lookup test failed: built API URL host must be allowlisted.'
+	);
+	cat_assert(
+		! $wikidata->is_allowed_host( 'evil.example' ) && ! $wikidata->is_allowed_host( 'wikipedia.org' ),
+		'Wikidata lookup test failed: off-allowlist hosts must be rejected.'
+	);
+	cat_assert(
+		'https://www.wikidata.org/wiki/Q42' === $wikidata->canonical_entity_url( 'Q42' ),
+		'Wikidata lookup test failed: canonical entity URL must use validated Q-id.'
+	);
+	cat_assert(
+		'' === $wikidata->canonical_entity_url( 'https://evil.example/Q1' ) && '' === $wikidata->canonical_entity_url( 'Q-abc' ),
+		'Wikidata lookup test failed: invalid entity ids must not become URLs.'
+	);
+
+	$permission_request = new \WP_REST_Request( 'GET', '/' . \ContextAuthorityToolkit\Cat_Wikidata_Lookup::REST_NAMESPACE . '/' . \ContextAuthorityToolkit\Cat_Wikidata_Lookup::REST_ROUTE );
+	$permission_request->set_param( 'post_id', $wikidata_term_id );
+	$permission_request->set_param( 'search', 'WordPress' );
+
+	if ( ! is_wp_error( $subscriber_user ) ) {
+		wp_set_current_user( (int) $subscriber_user );
+		$denied = $wikidata->permission_callback( $permission_request );
+		cat_assert(
+			is_wp_error( $denied ) && 'cat_wikidata_forbidden' === $denied->get_error_code(),
+			'Wikidata lookup test failed: subscriber without edit_post must be denied.'
+		);
+	}
+
+	wp_set_current_user( $admin_user_id );
+	$allowed_lookup = $wikidata->permission_callback( $permission_request );
+	cat_assert(
+		true === $allowed_lookup,
+		'Wikidata lookup test failed: editor with edit_post must be allowed.'
+	);
+
+	$empty_search_request = new \WP_REST_Request( 'GET', '/' . \ContextAuthorityToolkit\Cat_Wikidata_Lookup::REST_NAMESPACE . '/' . \ContextAuthorityToolkit\Cat_Wikidata_Lookup::REST_ROUTE );
+	$empty_search_request->set_param( 'post_id', $wikidata_term_id );
+	$empty_search_request->set_param( 'search', '   ' );
+	$empty_response = $wikidata->handle_search( $empty_search_request );
+	cat_assert(
+		is_wp_error( $empty_response ) && 'cat_wikidata_empty_search' === $empty_response->get_error_code(),
+		'Wikidata lookup test failed: empty search must be rejected.'
+	);
+	cat_assert(
+		array( 'https://example.com/keep-me' ) === get_post_meta( $wikidata_term_id, \ContextAuthorityToolkit\Cat_Glossary_Admin::SAME_AS_META_KEY, true ),
+		'Wikidata lookup test failed: empty search must not update cat_same_as meta.'
+	);
+	cat_assert(
+		$wikidata_marker === get_post_meta( $wikidata_term_id, '_cat_wikidata_test_marker', true ),
+		'Wikidata lookup test failed: lookup must remain read-only for post meta.'
+	);
+
+	$http_calls = array();
+	$http_filter = static function ( $preempt, $args, $url ) use ( &$http_calls ) {
+		unset( $preempt, $args );
+		$http_calls[] = $url;
+		$parts = wp_parse_url( $url );
+		$host  = is_array( $parts ) && ! empty( $parts['host'] ) ? strtolower( (string) $parts['host'] ) : '';
+		if ( ! in_array( $host, \ContextAuthorityToolkit\Cat_Wikidata_Lookup::ALLOWED_HOSTS, true ) ) {
+			return new \WP_Error( 'cat_test_off_allowlist', 'Off-allowlist host requested.' );
+		}
+
+		$payload = wp_json_encode(
+			array(
+				'search' => array(
+					array(
+						'id'          => 'Q42',
+						'label'       => 'Douglas Adams',
+						'description' => 'English writer',
+						'concepturi'  => 'http://www.wikidata.org/entity/Q42',
+						'url'         => 'https://evil.example/should-not-leak',
+					),
+					array(
+						'id'          => 'not-a-qid',
+						'label'       => 'Bad',
+						'description' => 'Should be dropped',
+					),
+					array(
+						'id'          => 'Q83',
+						'label'       => 'London',
+						'description' => 'capital of England',
+					),
+				),
+			)
+		);
+
+		return array(
+			'headers'  => array(),
+			'body'     => $payload,
+			'response' => array(
+				'code'    => 200,
+				'message' => 'OK',
+			),
+		);
+	};
+	add_filter( 'pre_http_request', $http_filter, 10, 3 );
+
+	$search_request = new \WP_REST_Request( 'GET', '/' . \ContextAuthorityToolkit\Cat_Wikidata_Lookup::REST_NAMESPACE . '/' . \ContextAuthorityToolkit\Cat_Wikidata_Lookup::REST_ROUTE );
+	$search_request->set_param( 'post_id', $wikidata_term_id );
+	$search_request->set_param( 'search', 'WordPress' );
+	$search_response = $wikidata->handle_search( $search_request );
+	remove_filter( 'pre_http_request', $http_filter, 10 );
+
+	cat_assert(
+		! is_wp_error( $search_response ),
+		'Wikidata lookup test failed: mocked search should succeed.'
+	);
+	$search_data = rest_ensure_response( $search_response )->get_data();
+	cat_assert(
+		is_array( $search_data ) && ! empty( $search_data['results'] ) && 2 === count( $search_data['results'] ),
+		'Wikidata lookup test failed: mocked search should return only valid Q entities.'
+	);
+	cat_assert(
+		'https://www.wikidata.org/wiki/Q42' === $search_data['results'][0]['url']
+			&& 'https://www.wikidata.org/wiki/Q83' === $search_data['results'][1]['url'],
+		'Wikidata lookup test failed: response URLs must be allowlisted canonical wiki URLs, not remote-supplied URLs.'
+	);
+	cat_assert(
+		1 === count( $http_calls ) && false !== strpos( $http_calls[0], 'https://www.wikidata.org/w/api.php' ),
+		'Wikidata lookup test failed: only the allowlisted Wikidata API URL may be requested.'
+	);
+	cat_assert(
+		array( 'https://example.com/keep-me' ) === get_post_meta( $wikidata_term_id, \ContextAuthorityToolkit\Cat_Glossary_Admin::SAME_AS_META_KEY, true ),
+		'Wikidata lookup test failed: successful search must not write cat_same_as meta.'
+	);
+	delete_post_meta( $wikidata_term_id, '_cat_wikidata_test_marker' );
 }
 
 wp_reset_postdata();
