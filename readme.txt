@@ -4,7 +4,7 @@ Tags: glossary, tooltips, schema, seo, aeo
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,11 @@ For full provenance and attribution details, see:
 * ATTRIBUTION.txt
 
 == Changelog ==
+
+= 1.0.1 =
+* Block themes now use a plugin-owned Single Term template so glossary pages show the term panel by default, without inserting a pattern (#25).
+* Site Editor Edit Site on a term opens Single Term; the term-panel block registers in the editor so it is not shown as missing.
+* Cite-this markup in the term panel no longer triggers a WP_Block_Supports null-offset warning when rendered outside a block canvas.
 
 = 1.0.0 =
 * First public 1.0 release closing #1 and #11–#17.
