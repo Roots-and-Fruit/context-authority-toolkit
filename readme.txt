@@ -4,7 +4,7 @@ Tags: glossary, tooltips, schema, seo, aeo
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 0.11.0
+Stable tag: 1.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,17 @@ For full provenance and attribution details, see:
 * ATTRIBUTION.txt
 
 == Changelog ==
+
+= 1.0.0 =
+* First public 1.0 release closing #1 and #11–#17.
+* Crawlable glossary mentions: inline triggers are real links with `rel="help"` so visitors and crawlers can follow a mention to the term page (#11).
+* Category archives list published terms in DefinedTermSet `hasDefinedTerm` with compact member nodes (#12).
+* Term singles expose canonical DefinedTerm identity with WebPage `mainEntity` pointing at the term graph (#16).
+* Visible lead definition at the top of term pages (#14).
+* Visible alternate names (“Also known as”) from `cat_alternatives` (#13).
+* Related terms list on term singles with schema `seeAlso` permalinks, capped at eight one-way links (#17).
+* Editor Wikidata search in the term sidebar appends authority URLs to `sameAs` without leaving the editor (#15).
+* Classic term panel: Customizer options, primary-sidebar inject or in-content fallback, FSE block pattern, and shared chrome for aliases, related, sameAs, sources, and cite-this (#1).
 
 = 0.11.0 =
 * Added Git Updater headers (Plugin URI, GitHub Plugin URI, Primary Branch, Release Asset) so sites can update from GitHub release zips.
