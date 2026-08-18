@@ -1,6 +1,6 @@
 <?php
 /**
- * Classic term panel placement: widget, Customizer, sidebar/content inject, FSE pattern.
+ * Classic term panel placement: widget, Customizer, sidebar/content inject, FSE single-term template.
  *
  * This class only decides where/whether to print. All HTML fragments come from
  * Cat_Term_Single_Chrome (+ Cat_Cite_This_Block for cite-this).
@@ -15,7 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Places the CAT term panel on classic themes and registers the FSE pattern.
+ * Places the CAT term panel on classic themes and registers the FSE template.
  */
 class Cat_Term_Panel {
 	/**
@@ -59,6 +59,26 @@ class Cat_Term_Panel {
 	const BLOCK_NAME = 'cat-toolkit/term-panel';
 
 	/**
+	 * Plugin-registered block template name (`plugin_slug//template_slug`).
+	 */
+	const BLOCK_TEMPLATE_NAME = 'context-authority-toolkit//single-term';
+
+	/**
+	 * Block template slug used by the FSE hierarchy (`single-{post_type}`).
+	 */
+	const BLOCK_TEMPLATE_SLUG = 'single-term';
+
+	/**
+	 * Design-panel two-column starter pattern (templateTypes: single-term only).
+	 */
+	const PATTERN_SINGLE_TERM_COLUMNS = 'cat-toolkit/single-term';
+
+	/**
+	 * Design-panel stacked starter pattern (templateTypes: single-term only).
+	 */
+	const PATTERN_SINGLE_TERM_STACKED = 'cat-toolkit/single-term-stacked';
+
+	/**
 	 * Widget id base.
 	 */
 	const WIDGET_ID_BASE = 'cat_term_panel';
@@ -87,6 +107,9 @@ class Cat_Term_Panel {
 		add_action( 'widgets_init', array( $this, 'register_widget' ) );
 		add_action( 'customize_register', array( $this, 'register_customizer' ) );
 		add_action( 'init', array( $this, 'register_block_and_pattern' ) );
+		add_filter( 'default_template_types', array( $this, 'register_default_template_type' ) );
+		add_filter( 'get_block_templates', array( $this, 'filter_block_templates' ), 10, 3 );
+		add_filter( 'get_block_file_template', array( $this, 'filter_block_file_template' ), 10, 3 );
 		add_action( 'dynamic_sidebar_before', array( $this, 'maybe_print_in_sidebar' ), 10, 2 );
 		add_filter( 'the_content', array( $this, 'maybe_append_to_content' ), 40 );
 		add_action( 'wp_enqueue_scripts', array( $this, 'maybe_enqueue_cite_assets' ) );
@@ -171,7 +194,7 @@ class Cat_Term_Panel {
 	}
 
 	/**
-	 * Register the FSE dynamic block and composing pattern.
+	 * Register the FSE dynamic block, patterns, and single-term template.
 	 *
 	 * @return void
 	 */
@@ -180,43 +203,190 @@ class Cat_Term_Panel {
 			return;
 		}
 
-		register_block_type(
-			self::BLOCK_NAME,
-			array(
-				'title'           => __( 'CAT Term Panel', 'context-authority-toolkit' ),
-				'description'     => __( 'About-this-term panel: aliases, related terms, authority links, sources, and cite this.', 'context-authority-toolkit' ),
-				'category'        => Cat_Cite_This_Block::BLOCK_CATEGORY,
-				'render_callback' => array( $this, 'render_panel_block' ),
-				'supports'        => array(
-					'html' => false,
-				),
-			)
-		);
+		if ( ! \WP_Block_Type_Registry::get_instance()->is_registered( self::BLOCK_NAME ) ) {
+			register_block_type(
+				self::BLOCK_NAME,
+				array(
+					'title'           => __( 'CAT Term Panel', 'context-authority-toolkit' ),
+					'description'     => __( 'About-this-term panel: aliases, related terms, authority links, sources, and cite this.', 'context-authority-toolkit' ),
+					'category'        => Cat_Cite_This_Block::BLOCK_CATEGORY,
+					'render_callback' => array( $this, 'render_panel_block' ),
+					'supports'        => array(
+						'html' => false,
+					),
+				)
+			);
+		}
 
-		if ( ! function_exists( 'register_block_pattern' ) ) {
+		if ( function_exists( 'register_block_pattern_category' ) ) {
+			register_block_pattern_category(
+				'cat-toolkit',
+				array(
+					'label' => __( 'Context & Authority Toolkit', 'context-authority-toolkit' ),
+				)
+			);
+		}
+
+		if ( function_exists( 'register_block_pattern' ) ) {
+			$patterns = \WP_Block_Patterns_Registry::get_instance();
+
+			if ( ! $patterns->is_registered( self::PATTERN_NAME ) ) {
+				register_block_pattern(
+					self::PATTERN_NAME,
+					array(
+						'title'       => __( 'CAT Term Panel', 'context-authority-toolkit' ),
+						'description' => __( 'Inserts the shared CAT term panel (aliases, related, authority links, sources, cite this).', 'context-authority-toolkit' ),
+						'categories'  => array( 'cat-toolkit' ),
+						'content'     => '<!-- wp:cat-toolkit/term-panel /-->',
+					)
+				);
+			}
+
+			$columns_markup = $this->get_plugin_template_markup( 'single-term.html' );
+			if ( '' !== $columns_markup && ! $patterns->is_registered( self::PATTERN_SINGLE_TERM_COLUMNS ) ) {
+				register_block_pattern(
+					self::PATTERN_SINGLE_TERM_COLUMNS,
+					array(
+						'title'         => __( 'Term with panel (two columns)', 'context-authority-toolkit' ),
+						'description'   => __( 'Glossary term layout with the CAT term panel in a complementary column.', 'context-authority-toolkit' ),
+						'categories'    => array( 'cat-toolkit' ),
+						'templateTypes' => array( self::BLOCK_TEMPLATE_SLUG ),
+						'inserter'      => false,
+						'content'       => $columns_markup,
+					)
+				);
+			}
+
+			$stacked_markup = $this->get_plugin_template_markup( 'single-term-stacked.html' );
+			if ( '' !== $stacked_markup && ! $patterns->is_registered( self::PATTERN_SINGLE_TERM_STACKED ) ) {
+				register_block_pattern(
+					self::PATTERN_SINGLE_TERM_STACKED,
+					array(
+						'title'         => __( 'Term with panel (stacked)', 'context-authority-toolkit' ),
+						'description'   => __( 'Glossary term layout with the CAT term panel stacked below the definition.', 'context-authority-toolkit' ),
+						'categories'    => array( 'cat-toolkit' ),
+						'templateTypes' => array( self::BLOCK_TEMPLATE_SLUG ),
+						'inserter'      => false,
+						'content'       => $stacked_markup,
+					)
+				);
+			}
+		}
+
+		$this->register_single_term_block_template();
+	}
+
+	/**
+	 * Register the plugin `single-term` block template (WP 6.7+).
+	 *
+	 * Theme `single-term` files still win. Hierarchy query has no post_type, so
+	 * the slug is enough for frontend resolution.
+	 *
+	 * @return void
+	 */
+	public function register_single_term_block_template() {
+		if ( ! function_exists( 'register_block_template' ) ) {
 			return;
 		}
 
-		if ( ! function_exists( 'register_block_pattern_category' ) ) {
+		$registry = \WP_Block_Templates_Registry::get_instance();
+		if ( $registry->is_registered( self::BLOCK_TEMPLATE_NAME ) ) {
 			return;
 		}
 
-		register_block_pattern_category(
-			'cat-toolkit',
+		$content = $this->get_plugin_template_markup( 'single-term.html' );
+		if ( '' === $content ) {
+			return;
+		}
+
+		register_block_template(
+			self::BLOCK_TEMPLATE_NAME,
 			array(
-				'label' => __( 'Context & Authority Toolkit', 'context-authority-toolkit' ),
+				'title'       => __( 'Single Term', 'context-authority-toolkit' ),
+				'description' => __( 'Displays a glossary term, including the CAT term panel.', 'context-authority-toolkit' ),
+				'content'     => $content,
+				'post_types'  => array( Cat_Glossary_Admin::POST_TYPE ),
 			)
+		);
+	}
+
+	/**
+	 * Label `single-term` as a default template type in the Site Editor.
+	 *
+	 * @param array $types Default template types.
+	 * @return array
+	 */
+	public function register_default_template_type( $types ) {
+		if ( ! is_array( $types ) ) {
+			return $types;
+		}
+
+		$types[ self::BLOCK_TEMPLATE_SLUG ] = array(
+			'title'       => __( 'Single Term', 'context-authority-toolkit' ),
+			'description' => __( 'Displays a glossary term, including the CAT term panel.', 'context-authority-toolkit' ),
 		);
 
-		register_block_pattern(
-			self::PATTERN_NAME,
-			array(
-				'title'       => __( 'CAT Term Panel', 'context-authority-toolkit' ),
-				'description' => __( 'Inserts the shared CAT term panel (aliases, related, authority links, sources, cite this).', 'context-authority-toolkit' ),
-				'categories'  => array( 'cat-toolkit' ),
-				'content'     => '<!-- wp:cat-toolkit/term-panel /-->',
-			)
-		);
+		return $types;
+	}
+
+	/**
+	 * Inject the plugin single-term template on WP 6.4–6.6 (no registry API).
+	 *
+	 * @param \WP_Block_Template[] $query_result Found templates.
+	 * @param array                $query        Template query.
+	 * @param string               $template_type Template type.
+	 * @return \WP_Block_Template[]
+	 */
+	public function filter_block_templates( $query_result, $query, $template_type ) {
+		if ( function_exists( 'register_block_template' ) || 'wp_template' !== $template_type ) {
+			return $query_result;
+		}
+
+		$query = is_array( $query ) ? $query : array();
+		$slug  = self::BLOCK_TEMPLATE_SLUG;
+
+		if ( ! empty( $query['slug__in'] ) && ! in_array( $slug, (array) $query['slug__in'], true ) ) {
+			return $query_result;
+		}
+
+		if ( ! empty( $query['post_type'] ) && Cat_Glossary_Admin::POST_TYPE !== $query['post_type'] ) {
+			return $query_result;
+		}
+
+		if ( ! is_array( $query_result ) ) {
+			$query_result = array();
+		}
+
+		foreach ( $query_result as $existing ) {
+			if ( $existing instanceof \WP_Block_Template && $slug === $existing->slug ) {
+				return $query_result;
+			}
+		}
+
+		$query_result[] = $this->build_plugin_block_template();
+		return $query_result;
+	}
+
+	/**
+	 * Resolve the plugin single-term template by id on WP 6.4–6.6.
+	 *
+	 * @param \WP_Block_Template|null $block_template Found template.
+	 * @param string                  $id             Template id (`theme//slug`).
+	 * @param string                  $template_type  Template type.
+	 * @return \WP_Block_Template|null
+	 */
+	public function filter_block_file_template( $block_template, $id, $template_type ) {
+		if ( $block_template || function_exists( 'register_block_template' ) || 'wp_template' !== $template_type ) {
+			return $block_template;
+		}
+
+		$parts = explode( '//', (string) $id );
+		$slug  = isset( $parts[1] ) ? $parts[1] : '';
+		if ( self::BLOCK_TEMPLATE_SLUG !== $slug ) {
+			return $block_template;
+		}
+
+		return $this->build_plugin_block_template();
 	}
 
 	/**
@@ -244,7 +414,8 @@ class Cat_Term_Panel {
 	/**
 	 * Print the panel at the start of the primary active classic sidebar.
 	 *
-	 * Skipped on block themes (FSE pattern is opt-in).
+	/**
+	 * Skipped on block themes (plugin `single-term` template owns placement).
 	 *
 	 * @param int|string $index       Sidebar index / id.
 	 * @param bool       $has_widgets Whether the sidebar has widgets.
@@ -321,14 +492,15 @@ class Cat_Term_Panel {
 	}
 
 	/**
-	 * Enqueue cite-this view assets when the classic panel will include cite-this.
+	 * Enqueue cite-this view assets when the panel will include cite-this.
 	 *
-	 * Block assets may not load when the block is absent from post content.
+	 * The cite-this block is not in post content on classic inject or the FSE
+	 * single-term template, so its view assets would not load otherwise.
 	 *
 	 * @return void
 	 */
 	public function maybe_enqueue_cite_assets() {
-		if ( wp_is_block_theme() || ! self::is_enabled() || ! self::show_cite_this() ) {
+		if ( ! self::is_enabled() || ! self::show_cite_this() ) {
 			return;
 		}
 
@@ -498,6 +670,51 @@ class Cat_Term_Panel {
 	 */
 	private function has_active_primary_sidebar() {
 		return '' !== $this->get_primary_sidebar_id();
+	}
+
+	/**
+	 * Load plugin-owned block template markup.
+	 *
+	 * @param string $filename File under plugin `templates/`.
+	 * @return string
+	 */
+	private function get_plugin_template_markup( $filename ) {
+		$filename = sanitize_file_name( (string) $filename );
+		if ( '' === $filename ) {
+			return '';
+		}
+
+		$path = CAT_TOOLKIT_DIR . 'templates/' . $filename;
+		if ( ! is_readable( $path ) ) {
+			return '';
+		}
+
+		$markup = file_get_contents( $path ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- local plugin template file.
+		return is_string( $markup ) ? $markup : '';
+	}
+
+	/**
+	 * Build a WP_Block_Template object for the plugin single-term layout.
+	 *
+	 * @return \WP_Block_Template
+	 */
+	private function build_plugin_block_template() {
+		$template              = new \WP_Block_Template();
+		$template->id          = get_stylesheet() . '//' . self::BLOCK_TEMPLATE_SLUG;
+		$template->theme       = get_stylesheet();
+		$template->plugin      = 'context-authority-toolkit';
+		$template->content     = $this->get_plugin_template_markup( 'single-term.html' );
+		$template->source      = 'plugin';
+		$template->slug        = self::BLOCK_TEMPLATE_SLUG;
+		$template->type        = 'wp_template';
+		$template->title       = __( 'Single Term', 'context-authority-toolkit' );
+		$template->description = __( 'Displays a glossary term, including the CAT term panel.', 'context-authority-toolkit' );
+		$template->status      = 'publish';
+		$template->origin      = 'plugin';
+		$template->is_custom   = false;
+		$template->post_types  = array( Cat_Glossary_Admin::POST_TYPE );
+
+		return $template;
 	}
 
 	/**

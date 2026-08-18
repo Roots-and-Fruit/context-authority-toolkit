@@ -42,12 +42,35 @@ class Cat_Cite_This_Block {
 	/**
 	 * Render cite-this markup for panel/chrome reuse without re-registering hooks.
 	 *
+	 * Goes through core `render_block()` so `get_block_wrapper_attributes()` has
+	 * a current block. Direct `render_block()` on this class is a fallback when
+	 * the block type is not registered yet.
+	 *
 	 * @param array $attributes Block attributes.
 	 * @return string
 	 */
 	public static function render_markup( $attributes = array() ) {
+		$attributes = is_array( $attributes ) ? $attributes : array();
+
+		if (
+			function_exists( 'render_block' )
+			&& \WP_Block_Type_Registry::get_instance()->is_registered( self::BLOCK_NAME )
+		) {
+			$html = render_block(
+				array(
+					'blockName'    => self::BLOCK_NAME,
+					'attrs'        => $attributes,
+					'innerBlocks'  => array(),
+					'innerHTML'    => '',
+					'innerContent' => array(),
+				)
+			);
+
+			return is_string( $html ) ? $html : '';
+		}
+
 		$renderer = new self( false );
-		return $renderer->render_block( is_array( $attributes ) ? $attributes : array() );
+		return $renderer->render_block( $attributes );
 	}
 
 	/**
@@ -145,7 +168,7 @@ class Cat_Cite_This_Block {
 			$copied_text = __( 'Copied!', 'context-authority-toolkit' );
 		}
 
-		$wrapper_attributes = get_block_wrapper_attributes(
+		$wrapper_attributes = $this->get_wrapper_html_attributes(
 			array(
 				'class'               => 'cat-cite-this',
 				'data-wp-interactive' => 'cat-cite-this',
@@ -162,6 +185,45 @@ class Cat_Cite_This_Block {
 			esc_html( $button_text ),
 			esc_html( $copied_text )
 		);
+	}
+
+	/**
+	 * Build wrapper attributes for the cite-this root element.
+	 *
+	 * `get_block_wrapper_attributes()` requires WP_Block_Supports::$block_to_render.
+	 * Panel/chrome reuse can run outside that context, so fall back to escaped extras.
+	 *
+	 * @param array $extra_attributes Extra HTML attributes.
+	 * @return string
+	 */
+	private function get_wrapper_html_attributes( $extra_attributes ) {
+		$extra_attributes = is_array( $extra_attributes ) ? $extra_attributes : array();
+
+		if ( ! empty( \WP_Block_Supports::$block_to_render ) && is_array( \WP_Block_Supports::$block_to_render ) ) {
+			return get_block_wrapper_attributes( $extra_attributes );
+		}
+
+		return $this->stringify_html_attributes( $extra_attributes );
+	}
+
+	/**
+	 * Convert an attribute map into an escaped HTML attribute string.
+	 *
+	 * @param array $attributes Attribute map.
+	 * @return string
+	 */
+	private function stringify_html_attributes( $attributes ) {
+		$parts = array();
+
+		foreach ( $attributes as $name => $value ) {
+			if ( ! is_string( $name ) || '' === $name || ! is_scalar( $value ) ) {
+				continue;
+			}
+
+			$parts[] = $name . '="' . esc_attr( (string) $value ) . '"';
+		}
+
+		return implode( ' ', $parts );
 	}
 
 	/**

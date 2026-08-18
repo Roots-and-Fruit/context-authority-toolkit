@@ -2116,13 +2116,28 @@ $wp_query->is_single         = true;
 $wp_query->queried_object    = $panel_post;
 $wp_query->queried_object_id = $panel_term;
 
+$cite_wrapper_warned = false;
+set_error_handler(
+	function ( $errno, $errstr ) use ( &$cite_wrapper_warned ) {
+		unset( $errno );
+		if ( false !== strpos( (string) $errstr, 'array offset on null' ) ) {
+			$cite_wrapper_warned = true;
+		}
+		return false;
+	}
+);
 $full_panel = $panel_chrome->render_panel_html( $panel_term );
+restore_error_handler();
 cat_assert(
 	false !== strpos( $full_panel, 'cat-term-panel' )
 		&& false !== strpos( $full_panel, 'About this term' )
 		&& false !== strpos( $full_panel, 'cat-cite-this' )
 		&& false !== strpos( $full_panel, 'cat-cite-this__button' ),
 	'Term panel test failed: panel composer must include aside + cite-this markup from the block renderer.'
+);
+cat_assert(
+	! $cite_wrapper_warned,
+	'Term panel test failed: cite-this panel render must not trigger WP_Block_Supports null offset warnings.'
 );
 
 update_option( \ContextAuthorityToolkit\Cat_Term_Panel::OPTION_SHOW_SAME_AS, false );
@@ -2173,6 +2188,58 @@ $patterns = \WP_Block_Patterns_Registry::get_instance();
 cat_assert(
 	$patterns->is_registered( \ContextAuthorityToolkit\Cat_Term_Panel::PATTERN_NAME ),
 	'Term panel test failed: block pattern cat-toolkit/term-panel must be registered.'
+);
+
+$default_types = get_default_block_template_types();
+cat_assert(
+	isset( $default_types[ \ContextAuthorityToolkit\Cat_Term_Panel::BLOCK_TEMPLATE_SLUG ] ),
+	'Term panel test failed: single-term must be registered as a default template type.'
+);
+
+$single_term_templates = get_block_templates(
+	array(
+		'slug__in' => array( \ContextAuthorityToolkit\Cat_Term_Panel::BLOCK_TEMPLATE_SLUG ),
+	)
+);
+$single_term_slugs = array();
+foreach ( $single_term_templates as $single_term_template ) {
+	if ( $single_term_template instanceof WP_Block_Template ) {
+		$single_term_slugs[] = $single_term_template->slug;
+	}
+}
+cat_assert(
+	in_array( \ContextAuthorityToolkit\Cat_Term_Panel::BLOCK_TEMPLATE_SLUG, $single_term_slugs, true ),
+	'Term panel test failed: get_block_templates must return the plugin single-term template.'
+);
+
+if ( function_exists( 'register_block_template' ) ) {
+	$registered_term_template = WP_Block_Templates_Registry::get_instance()->get_by_slug(
+		\ContextAuthorityToolkit\Cat_Term_Panel::BLOCK_TEMPLATE_SLUG
+	);
+	cat_assert(
+		$registered_term_template instanceof WP_Block_Template
+			&& false !== strpos( (string) $registered_term_template->content, 'cat-toolkit/term-panel' )
+			&& false !== strpos( (string) $registered_term_template->content, 'wp:columns' ),
+		'Term panel test failed: registered single-term template must include columns and the term-panel block.'
+	);
+}
+
+$columns_pattern = $patterns->get_registered( \ContextAuthorityToolkit\Cat_Term_Panel::PATTERN_SINGLE_TERM_COLUMNS );
+$stacked_pattern = $patterns->get_registered( \ContextAuthorityToolkit\Cat_Term_Panel::PATTERN_SINGLE_TERM_STACKED );
+$columns_types   = ( isset( $columns_pattern['templateTypes'] ) && is_array( $columns_pattern['templateTypes'] ) )
+	? $columns_pattern['templateTypes']
+	: array();
+$stacked_types = ( isset( $stacked_pattern['templateTypes'] ) && is_array( $stacked_pattern['templateTypes'] ) )
+	? $stacked_pattern['templateTypes']
+	: array();
+cat_assert(
+	in_array( 'single-term', $columns_types, true )
+		&& in_array( 'single-term', $stacked_types, true )
+		&& ! in_array( 'single', $columns_types, true )
+		&& ! in_array( 'posts', $columns_types, true )
+		&& ! in_array( 'single', $stacked_types, true )
+		&& ! in_array( 'posts', $stacked_types, true ),
+	'Term panel test failed: Design starters must use templateTypes single-term only (not single/posts).'
 );
 
 wp_reset_postdata();
