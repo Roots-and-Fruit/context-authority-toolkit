@@ -314,6 +314,7 @@ class Cat_Glossary_Admin {
 					'sourcesMeta'         => self::SOURCES_META_KEY,
 					'relatedTermsMeta'    => self::RELATED_TERMS_META_KEY,
 					'relatedTermsMax'     => self::RELATED_TERMS_MAX,
+					'wikidataSearchPath'  => '/' . Cat_Wikidata_Lookup::REST_NAMESPACE . '/' . Cat_Wikidata_Lookup::REST_ROUTE,
 				)
 			) . ';',
 			'before'

@@ -15,7 +15,7 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Registers REST-backed meta for block editor sidebar fields (including `cat_related_terms`)
   - Sanitizes `sameAs` and source repeater inputs to valid public `http/https` URLs and strict `YYYY-MM-DD` dates
   - Sanitizes related term IDs to published `term` posts only (unique, never self, cap 8, one-way)
-  - Enqueues custom block editor sidebar controls
+  - Enqueues custom block editor sidebar controls (including Wikidata search path localization)
   - Runs one-time tooltip content migration from legacy post content
 - `includes/class-cat-glossary.php`
   - Loads published glossary items
@@ -57,9 +57,17 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Registers Abilities API category `context-authority-toolkit` when `wp_register_ability` exists (WP 6.9+ or Abilities plugin)
   - Exposes MCP-discoverable CRUD tools plus list/update of all term post meta and Category assignment
   - Reuses `Cat_Glossary_Admin` sanitizers for CAT-owned keys; cache busts via existing `save_post_term` hook
+- `includes/class-cat-wikidata-lookup.php`
+  - Registers editor-only REST route `GET /context-authority-toolkit/v1/wikidata-search`
+  - Requires `edit_post` for the supplied term `post_id`
+  - Calls Wikimedia `wbsearchentities` via `wp_remote_get` with host allowlist (`www.wikidata.org`, `wikidata.org`), timeout, result/body caps, and no client-supplied URLs
+  - Returns sanitized `{ id, label, description, url }` rows using canonical `https://www.wikidata.org/wiki/Q…` URLs only
+  - Read-only: never writes meta; sidebar appends chosen URLs to existing `cat_same_as`
 - `assets/js/glossary-hovercards.js`
   - Manages interaction states (`is-visible`, `is-pinned`)
   - Handles click, hover, focus, and escape-close logic
+- `assets/js/term-editor-sidebar.js`
+  - Block editor sidebar: Alternate Names, tooltip, related terms, Related Authority Links paste textarea, Wikidata search/pick UI, sources repeater
 - `assets/js/term-settings.js`
   - Progressive-enhancement preview and Categories → permalink control toggle
 
@@ -70,9 +78,10 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
 - Meta key: `cat_alternatives` (array of alternate names)
 - Meta key: `cat_tooltip_content` (plain-text tooltip body with line breaks)
 - Meta key: `cat_disable_autolinking` (boolean toggle for public content)
-- Meta key: `cat_same_as` (array of external authority URLs)
+- Meta key: `cat_same_as` (array of external authority URLs; editor Wikidata lookup appends here only — no separate Q-id meta)
 - Meta key: `cat_sources` (array of citation rows with url/title/publisher/date)
 - Meta key: `cat_related_terms` (array of related glossary term post IDs; published `term` only; unique; never self; max 8; one-way)
+- REST: `GET /context-authority-toolkit/v1/wikidata-search` (editor-only; `edit_post`; allowlisted Wikidata `wp_remote_get`; read-only)
 - Option: `cat_schema_output_mode` (`auto|standalone|off`)
 - Option: `cat_breadcrumb_integration` (boolean)
 - Option: `cat_term_slug` (rewrite base; default `term`)

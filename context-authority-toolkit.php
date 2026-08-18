@@ -43,6 +43,7 @@ require_once CAT_TOOLKIT_DIR . 'includes/class-cat-cite-this-block.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-settings.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-category.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-abilities.php';
+require_once CAT_TOOLKIT_DIR . 'includes/class-cat-wikidata-lookup.php';
 
 /**
  * Bootstrap the plugin.
@@ -60,6 +61,7 @@ function cat_toolkit_bootstrap() {
 	new Cat_Term_Settings();
 	new Cat_Term_Category();
 	new Cat_Abilities( $admin );
+	new Cat_Wikidata_Lookup();
 }
 add_action( 'plugins_loaded', __NAMESPACE__ . '\\cat_toolkit_bootstrap' );
 

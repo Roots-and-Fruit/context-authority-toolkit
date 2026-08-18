@@ -45,6 +45,18 @@ This document defines live behavior contracts that must remain true unless a cha
 - Permissions follow the CPT: list/create need `edit_posts`; get/update/meta need `edit_post`; delete needs `delete_post`. Not gated on `manage_options`.
 - Create defaults to `draft` unless `status` is supplied.
 - Tooltip text still comes only from `cat_tooltip_content`, never `post_content`.
+- There is no dedicated Wikidata Abilities API tool. Wikidata search is editor REST only (`Cat_Wikidata_Lookup`).
+
+## Editor Wikidata lookup contract
+
+- Route: `GET /wp-json/context-authority-toolkit/v1/wikidata-search`.
+- Args: `post_id` (required) and `search` (required, `sanitize_text_field`; empty rejected).
+- `permission_callback` requires `current_user_can( 'edit_post', $post_id )`. Cookie/nonce authentication via core REST (`apiFetch` / `wpApiSettings`).
+- Server builds the Wikimedia `wbsearchentities` URL itself (`https://www.wikidata.org/w/api.php`). Clients never supply a request URL.
+- Outbound HTTP: `wp_remote_get` only; allowlisted hosts `www.wikidata.org` and `wikidata.org`; `redirection => 0`; timeout 5 seconds; result cap 8; body size capped; JSON parsed via `wp_remote_retrieve_body` + `json_decode`.
+- Response to the editor is only `{ results: [ { id, label, description, url } ] }` where `url` is the canonical wiki entity URL from a validated Q-id (`/^Q[0-9]+$/`), never a remote-supplied arbitrary URL.
+- Lookup is read-only: it does not write `cat_same_as` or any other meta. Picking a result in the sidebar appends through existing `setMetaValue` + `sanitize_same_as_meta()`.
+- No frontend/visitor Wikidata lookup. Hovercards JS is untouched.
 
 ## Markup and accessibility contract
 
@@ -77,6 +89,7 @@ This document defines live behavior contracts that must remain true unless a cha
 - On term singles, standalone JSON-LD `@graph` includes a `WebPage` (`url` = term permalink) whose `mainEntity` is the DefinedTerm `@id` (`{permalink}/#definedterm`), plus the DefinedTerm node. Category archives remain `DefinedTermSet` only (no WebPage wrapper).
 - Yoast / Rank Math / SEOPress adapters must not append a second `WebPage`. When a page node already exists (`WebPage` or similar), they set `mainEntity` on that node and still append the CAT DefinedTerm. Yoast DefinedTerm injection remains via `wpseo_schema_graph_pieces`; `mainEntity` attachment uses `wpseo_schema_graph` when available.
 - URL-bearing schema fields (`sameAs`, `seeAlso`, citation `url`) only allow valid public `http/https` URLs.
+- Editor Wikidata lookup is optional UX for `cat_same_as` only: editors must pick a result; cancel/clear leaves the list unchanged; no auto-fill on save or title match. Canonical entity URLs are `https://www.wikidata.org/wiki/Q{digits}`. Wikipedia sitelinks remain manual paste. Lookup does not introduce a new meta key and does not change Peacekeeper `sameAs` mapping. Schema output `off` still suppresses JSON-LD while meta remains stored.
 - `seeAlso` on the DefinedTerm node lists permalinks of explicitly related published glossary terms (`cat_related_terms`). Empty related lists omit `seeAlso` (and omit the visible related block). `seeAlso` is not placed on the WebPage node.
 - Citation `datePublished` accepts strict ISO format (`YYYY-MM-DD`) only.
 - Delivery mode is controlled by CAT settings:

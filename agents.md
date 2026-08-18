@@ -29,18 +29,20 @@ This plugin detects glossary terms in post/comment content and wraps the **first
 | `includes/class-cat-term-settings.php` | Term → Settings (slug, categories toggle, permalink mode) |
 | `includes/class-cat-term-category.php` | Category taxonomy (`cat-term-category`) + DefinedTermSet helpers |
 | `includes/class-cat-abilities.php` | Abilities API CRUD + term meta + Category assignment (MCP tools) |
+| `includes/class-cat-wikidata-lookup.php` | Editor-only Wikidata `wbsearchentities` REST lookup for `cat_same_as` |
 | `assets/js/glossary-hovercards.js` | Interaction states, click/hover/focus/escape handling |
 | `assets/js/term-settings.js` | Settings-screen preview + conditional permalink control |
 
 ## Data model
 
 - **CPT:** `term` (never rename without explicit approval; rewrite base via `Cat_Term_Settings::get_term_slug()`)
-- **Meta keys:** `cat_alternatives` (array), `cat_tooltip_content` (plain text), `cat_disable_autolinking` (boolean), `cat_related_terms` (array of related term post IDs; max 8; published `term` only; one-way)
+- **Meta keys:** `cat_alternatives` (array), `cat_tooltip_content` (plain text), `cat_disable_autolinking` (boolean), `cat_related_terms` (array of related term post IDs; max 8; published `term` only; one-way), `cat_same_as` (array of public http/https authority URLs; Wikidata lookup appends here only — no separate Q-id meta)
 - **Term structure options:** `cat_term_slug`, `cat_categories_enabled`, `cat_term_permalink_include_category` — read only via `Cat_Term_Settings` getters
 - **Taxonomy:** `cat-term-category` when Categories enabled — labels always **Category** / **Categories**; never core `category`; caps map to `manage_options` (manage/edit/delete) and `edit_posts` (assign) — never `manage_categories`
 - **Primary Category:** `cat_primary_category` post meta (term ID) — resolve only via `Cat_Term_Category::get_primary_category()`
 - **Cache group:** `context-authority-toolkit` | **Cache key:** `items-v{version}` — clear only via `Cat_Glossary::clear_items_cache()`
 - **Abilities:** `context-authority-toolkit/{list-terms,get-term,create-term,update-term,delete-term,list-term-meta,update-term-meta}` — register only when Abilities API exists; MCP `meta.mcp.public=true`
+- **Editor REST:** `GET /context-authority-toolkit/v1/wikidata-search` — requires `edit_post` for the term `post_id`; server-side `wp_remote_get` to allowlisted Wikidata hosts only; read-only (does not write meta)
 
 ## Category taxonomy note
 
