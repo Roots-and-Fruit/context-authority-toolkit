@@ -890,6 +890,10 @@ foreach ( $defined_set_schema['hasDefinedTerm'] as $member_node ) {
 		! empty( $member_node['@type'] ) && 'DefinedTerm' === $member_node['@type'],
 		'Category taxonomy test failed: hasDefinedTerm members must be compact DefinedTerm nodes.'
 	);
+	cat_assert(
+		array( '@type', '@id', 'name', 'url' ) === array_keys( $member_node ),
+		'Category taxonomy test failed: hasDefinedTerm members must not include tooltip, sameAs, or citation fields.'
+	);
 	$member_urls[] = (string) $member_node['url'];
 	$member_ids[]  = (string) $member_node['@id'];
 }
