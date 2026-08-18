@@ -27,10 +27,27 @@ class Cat_Cite_This_Block {
 
 	/**
 	 * Register hooks.
+	 *
+	 * @param bool $register_hooks When false, skip hook registration (panel/chrome reuse).
 	 */
-	public function __construct() {
+	public function __construct( $register_hooks = true ) {
+		if ( ! $register_hooks ) {
+			return;
+		}
+
 		add_action( 'init', array( $this, 'register_block' ) );
 		add_filter( 'block_categories_all', array( $this, 'register_block_category' ) );
+	}
+
+	/**
+	 * Render cite-this markup for panel/chrome reuse without re-registering hooks.
+	 *
+	 * @param array $attributes Block attributes.
+	 * @return string
+	 */
+	public static function render_markup( $attributes = array() ) {
+		$renderer = new self( false );
+		return $renderer->render_block( is_array( $attributes ) ? $attributes : array() );
 	}
 
 	/**

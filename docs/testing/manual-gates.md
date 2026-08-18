@@ -18,6 +18,12 @@ Run the checklist when changes affect:
 - popover markup, ARIA attributes, or linked content
 - tooltip JavaScript and CSS state handling
 
+## Classic / FSE term panel
+
+When changes touch term panel placement, Customizer options, or panel chrome sections, run:
+
+- `docs/testing/manual-term-panel-gate.md`
+
 ## Evidence requirements
 
 For each run, capture:

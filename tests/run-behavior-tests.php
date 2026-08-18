@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once ABSPATH . 'wp-admin/includes/user.php';
 
-if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Single_Chrome' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Abilities' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Wikidata_Lookup' ) ) {
+if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Single_Chrome' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Panel' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Abilities' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Wikidata_Lookup' ) ) {
 	echo "Plugin classes are unavailable. Ensure plugin is active before running tests.\n";
 	exit( 1 );
 }
@@ -2052,6 +2052,128 @@ if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Wikidata_Lookup' ) ) {
 	);
 	delete_post_meta( $wikidata_term_id, '_cat_wikidata_test_marker' );
 }
+
+// Test 28: Classic term panel chrome + placement options + pattern registration.
+$panel_chrome = new \ContextAuthorityToolkit\Cat_Term_Single_Chrome();
+$panel_term   = cat_create_term(
+	'Panel Term',
+	'<p>Panel term body about Panel Term.</p>',
+	array( 'PT' ),
+	'Panel tip',
+	array( 'https://www.wikidata.org/wiki/Q123', 'https://example.com/authority' ),
+	array(
+		array(
+			'url'           => 'https://example.com/source-one',
+			'title'         => 'Source One Title',
+			'publisher'     => 'Example Press',
+			'datePublished' => '2024-06-01',
+		),
+		array(
+			'url' => 'https://example.com/source-untitled',
+		),
+	)
+);
+$test_post_ids[] = $panel_term;
+
+$same_as_html = $panel_chrome->render_same_as_html( $panel_term );
+cat_assert(
+	false !== strpos( $same_as_html, 'cat-term-panel__same-as' )
+		&& false !== strpos( $same_as_html, 'www.wikidata.org' )
+		&& false !== strpos( $same_as_html, esc_url( 'https://www.wikidata.org/wiki/Q123' ) )
+		&& false !== strpos( $same_as_html, esc_url( 'https://example.com/authority' ) ),
+	'Term panel test failed: sameAs HTML must include escaped authority URLs and host labels.'
+);
+
+$sources_html = $panel_chrome->render_sources_html( $panel_term );
+cat_assert(
+	false !== strpos( $sources_html, 'cat-term-panel__sources' )
+		&& false !== strpos( $sources_html, 'Source One Title' )
+		&& false !== strpos( $sources_html, 'Example Press' )
+		&& false !== strpos( $sources_html, '2024-06-01' )
+		&& false !== strpos( $sources_html, esc_url( 'https://example.com/source-untitled' ) ),
+	'Term panel test failed: sources HTML must escape title/publisher/date and fall back to URL label.'
+);
+
+$empty_panel_term = cat_create_term( 'Empty Panel Term', '<p>Empty panel body.</p>', array(), '' );
+$test_post_ids[]  = $empty_panel_term;
+cat_assert(
+	'' === $panel_chrome->render_same_as_html( $empty_panel_term )
+		&& '' === $panel_chrome->render_sources_html( $empty_panel_term ),
+	'Term panel test failed: empty sameAs/sources meta must omit those sections.'
+);
+cat_assert(
+	'' === $panel_chrome->render_panel_html( $empty_panel_term ),
+	'Term panel test failed: fully empty panel must omit the aside.'
+);
+
+$panel_post = get_post( $panel_term );
+setup_postdata( $panel_post );
+$GLOBALS['post'] = $panel_post;
+
+global $wp_query;
+$wp_query->is_singular       = true;
+$wp_query->is_single         = true;
+$wp_query->queried_object    = $panel_post;
+$wp_query->queried_object_id = $panel_term;
+
+$full_panel = $panel_chrome->render_panel_html( $panel_term );
+cat_assert(
+	false !== strpos( $full_panel, 'cat-term-panel' )
+		&& false !== strpos( $full_panel, 'About this term' )
+		&& false !== strpos( $full_panel, 'cat-cite-this' )
+		&& false !== strpos( $full_panel, 'cat-cite-this__button' ),
+	'Term panel test failed: panel composer must include aside + cite-this markup from the block renderer.'
+);
+
+update_option( \ContextAuthorityToolkit\Cat_Term_Panel::OPTION_SHOW_SAME_AS, false );
+$toggled_panel = \ContextAuthorityToolkit\Cat_Term_Panel::render_panel_for_term( $panel_term );
+cat_assert(
+	false === strpos( $toggled_panel, 'cat-term-panel__same-as' )
+		&& false !== strpos( $toggled_panel, 'cat-term-panel__sources' ),
+	'Term panel test failed: section toggle off must omit only that section.'
+);
+update_option( \ContextAuthorityToolkit\Cat_Term_Panel::OPTION_SHOW_SAME_AS, true );
+
+update_option( \ContextAuthorityToolkit\Cat_Term_Panel::OPTION_ENABLED, false );
+cat_assert(
+	false === \ContextAuthorityToolkit\Cat_Term_Panel::is_enabled(),
+	'Term panel test failed: disabled option must flip is_enabled() to false.'
+);
+
+// Force inactive sidebars so content fallback path runs (bootstrapped Cat_Term_Panel).
+$cat_panel_sidebars_filter = static function () {
+	return array( 'wp_inactive_widgets' => array() );
+};
+add_filter( 'sidebars_widgets', $cat_panel_sidebars_filter, 999 );
+\ContextAuthorityToolkit\Cat_Term_Panel::reset_panel_printed_flag();
+$disabled_content = apply_filters( 'the_content', '<p>Panel term body about Panel Term.</p>' );
+cat_assert(
+	false === strpos( $disabled_content, 'class="cat-term-panel"' ),
+	'Term panel test failed: disabled option must omit panel from content injection.'
+);
+update_option( \ContextAuthorityToolkit\Cat_Term_Panel::OPTION_ENABLED, true );
+
+\ContextAuthorityToolkit\Cat_Term_Panel::reset_panel_printed_flag();
+$injected = apply_filters( 'the_content', '<p>Panel term body about Panel Term.</p>' );
+cat_assert(
+	false !== strpos( $injected, 'class="cat-term-panel"' ),
+	'Term panel test failed: content fallback must inject the panel when no active sidebar.'
+);
+
+\ContextAuthorityToolkit\Cat_Term_Panel::reset_panel_printed_flag();
+$reinjected = apply_filters( 'the_content', $injected );
+cat_assert(
+	$reinjected === $injected,
+	'Term panel test failed: existing cat-term-panel class marker must block double-inject.'
+);
+remove_filter( 'sidebars_widgets', $cat_panel_sidebars_filter, 999 );
+
+do_action( 'init' );
+$patterns = \WP_Block_Patterns_Registry::get_instance();
+cat_assert(
+	$patterns->is_registered( \ContextAuthorityToolkit\Cat_Term_Panel::PATTERN_NAME ),
+	'Term panel test failed: block pattern cat-toolkit/term-panel must be registered.'
+);
 
 wp_reset_postdata();
 foreach ( $test_post_ids as $test_post_id ) {

@@ -11,6 +11,7 @@ This file defines current test ownership and coverage boundaries.
 | Plugin compatibility checks | Automated | `wp plugin check context-authority-toolkit` in `docs/testing/quality-gates.md` |
 | Activation/deactivation smoke checks | Automated | WP-CLI smoke commands in `docs/testing/quality-gates.md` |
 | Tooltip/popover interaction UX | Manual | `tests/manual-tooltip-gate.md` |
+| Classic/FSE term panel placement | Manual | `docs/testing/manual-term-panel-gate.md` |
 
 ## Current gaps and policy
 

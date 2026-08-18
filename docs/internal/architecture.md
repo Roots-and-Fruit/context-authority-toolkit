@@ -34,9 +34,16 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Adds semantic microdata wrappers (`aria-labelledby` + `dfn` id linkage) and read-aloud sanitization pipeline
   - Delegates visible lead/alias/related HTML to `Cat_Term_Single_Chrome`
 - `includes/class-cat-term-single-chrome.php`
-  - Renders term-single visitor chrome: tooltip lead, “Also known as” aliases, and Related terms list
-  - Public helpers for display aliases, termCode detection, lead-duplication comparison, and related-term ID resolution
+  - Renders term-single visitor chrome: tooltip lead, “Also known as” aliases, Related terms list, sameAs authority links, sources/citations, and the composed term panel aside
+  - Public helpers for display aliases, termCode detection, lead-duplication comparison, related-term ID resolution, and panel section fragments
+  - **Sole fragment renderer** for panel HTML; cite-this inside the panel calls `Cat_Cite_This_Block::render_markup()`
   - Related terms stay out of the glossary matcher / items cache (editor-chosen links only; not inferred from Category)
+- `includes/class-cat-term-panel.php`
+  - Placement only: Customizer controls, primary-sidebar inject, `the_content` aside fallback, FSE dynamic block + pattern `cat-toolkit/term-panel`
+  - Options (plugin options, not theme_mods): `cat_term_panel_enabled`, `cat_term_panel_show_aliases`, `cat_term_panel_show_related`, `cat_term_panel_show_same_as`, `cat_term_panel_show_sources`, `cat_term_panel_show_cite_this`
+  - On block themes, skips classic injection (pattern is opt-in); does not register a new widget area or ship theme templates
+- `includes/class-cat-term-panel-widget.php`
+  - Classic `WP_Widget` that prints chrome panel HTML on term singles (respects shared printed-flag guard)
 - `includes/class-cat-glossary-hovercards.php`
   - Enqueues frontend CSS/JS assets
 - `includes/class-cat-term-settings.php`
@@ -91,6 +98,12 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
 - Meta key: `cat_primary_category` (integer term ID; explicit primary Category for permalinks and schema)
 - Option: `cat_term_permalink_redirects` (old path => new path map; max 200 entries FIFO; not autoloaded)
 - Option: `cat_rewrite_flush_needed` (transient-style flag; autoloaded only while set)
+- Option: `cat_term_panel_enabled` (boolean; default `true` — classic/FSE panel master switch)
+- Option: `cat_term_panel_show_aliases` (boolean; default `true`)
+- Option: `cat_term_panel_show_related` (boolean; default `true`)
+- Option: `cat_term_panel_show_same_as` (boolean; default `true`)
+- Option: `cat_term_panel_show_sources` (boolean; default `true`)
+- Option: `cat_term_panel_show_cite_this` (boolean; default `true`)
 
 ## Content flow
 
