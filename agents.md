@@ -24,6 +24,8 @@ This plugin detects glossary terms in post/comment content and wraps the **first
 | `includes/class-cat-glossary-handler.php` | Content filtering — wraps first match in `the_content`/`comment_text` |
 | `includes/class-cat-glossary-admin.php` | CPT registration, meta, block editor sidebar |
 | `includes/class-cat-glossary-hovercards.php` | Frontend asset enqueueing |
+| `includes/class-cat-seo-peacekeeper.php` | Schema transport, semantic wrappers, WebPage.mainEntity |
+| `includes/class-cat-term-single-chrome.php` | Term-single visible lead + aliases HTML (`Cat_Term_Single_Chrome`) |
 | `includes/class-cat-term-settings.php` | Term → Settings (slug, categories toggle, permalink mode) |
 | `includes/class-cat-term-category.php` | Category taxonomy (`cat-term-category`) + DefinedTermSet helpers |
 | `includes/class-cat-abilities.php` | Abilities API CRUD + term meta + Category assignment (MCP tools) |
