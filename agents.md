@@ -25,7 +25,9 @@ This plugin detects glossary terms in post/comment content and wraps the **first
 | `includes/class-cat-glossary-admin.php` | CPT registration, meta, block editor sidebar |
 | `includes/class-cat-glossary-hovercards.php` | Frontend asset enqueueing |
 | `includes/class-cat-seo-peacekeeper.php` | Schema transport, semantic wrappers, WebPage.mainEntity |
-| `includes/class-cat-term-single-chrome.php` | Term-single visible lead + aliases + related HTML (`Cat_Term_Single_Chrome`) |
+| `includes/class-cat-term-single-chrome.php` | Term-single visible lead + aliases + related + sameAs + sources + panel composer HTML (`Cat_Term_Single_Chrome`) |
+| `includes/class-cat-term-panel.php` | Classic term panel placement: Customizer options, sidebar/content inject, FSE pattern (`Cat_Term_Panel`) |
+| `includes/class-cat-term-panel-widget.php` | Classic `WP_Widget` for manual/primary sidebar placement (`Cat_Term_Panel_Widget`) |
 | `includes/class-cat-term-settings.php` | Term → Settings (slug, categories toggle, permalink mode) |
 | `includes/class-cat-term-category.php` | Category taxonomy (`cat-term-category`) + DefinedTermSet helpers |
 | `includes/class-cat-abilities.php` | Abilities API CRUD + term meta + Category assignment (MCP tools) |

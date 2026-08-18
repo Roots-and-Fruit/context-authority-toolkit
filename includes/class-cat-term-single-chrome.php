@@ -14,7 +14,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Renders visitor-facing lead, alias, and related markup on term singles.
+ * Renders visitor-facing lead, alias, related, sameAs, sources, and term-panel markup.
+ *
+ * This class is the sole fragment renderer for term-single chrome. Placement
+ * (sidebar, content aside, FSE pattern) lives in Cat_Term_Panel.
  */
 class Cat_Term_Single_Chrome {
 	/**
@@ -119,6 +122,196 @@ class Cat_Term_Single_Chrome {
 			esc_attr__( 'Related terms', 'context-authority-toolkit' ),
 			esc_html__( 'Related terms', 'context-authority-toolkit' ),
 			implode( '', $items )
+		);
+	}
+
+	/**
+	 * Render visible sameAs / authority links from stored `cat_same_as` meta.
+	 *
+	 * Uses already-sanitized stored URLs only (no remote refetch). Label is the
+	 * URL host when available, otherwise the URL text. Empty list omits the block.
+	 *
+	 * @param int $term_post_id Term post ID.
+	 * @return string Escaped HTML or empty string.
+	 */
+	public function render_same_as_html( $term_post_id ) {
+		$term_post_id = absint( $term_post_id );
+		if ( $term_post_id <= 0 ) {
+			return '';
+		}
+
+		$raw = get_post_meta( $term_post_id, Cat_Glossary_Admin::SAME_AS_META_KEY, true );
+		if ( ! is_array( $raw ) ) {
+			return '';
+		}
+
+		$items = array();
+		$seen  = array();
+
+		foreach ( $raw as $raw_url ) {
+			$url = esc_url( trim( (string) $raw_url ) );
+			if ( '' === $url || isset( $seen[ $url ] ) ) {
+				continue;
+			}
+
+			$seen[ $url ] = true;
+			$host         = wp_parse_url( $url, PHP_URL_HOST );
+			$label        = ( is_string( $host ) && '' !== $host ) ? $host : $url;
+
+			$items[] = sprintf(
+				'<li class="cat-term-panel__same-as-item"><a class="cat-term-panel__same-as-link" href="%1$s">%2$s</a></li>',
+				esc_url( $url ),
+				esc_html( $label )
+			);
+		}
+
+		if ( empty( $items ) ) {
+			return '';
+		}
+
+		return sprintf(
+			'<section class="cat-term-panel__same-as"><h3 class="cat-term-panel__section-heading">%1$s</h3><ul class="cat-term-panel__same-as-list">%2$s</ul></section>',
+			esc_html__( 'Authority links', 'context-authority-toolkit' ),
+			implode( '', $items )
+		);
+	}
+
+	/**
+	 * Render visible sources / citations from stored `cat_sources` meta.
+	 *
+	 * Uses already-sanitized stored rows only (no remote refetch). Link text is
+	 * title when present, otherwise the URL. Optional publisher and date are
+	 * escaped when present. Empty list omits the block.
+	 *
+	 * @param int $term_post_id Term post ID.
+	 * @return string Escaped HTML or empty string.
+	 */
+	public function render_sources_html( $term_post_id ) {
+		$term_post_id = absint( $term_post_id );
+		if ( $term_post_id <= 0 ) {
+			return '';
+		}
+
+		$raw = get_post_meta( $term_post_id, Cat_Glossary_Admin::SOURCES_META_KEY, true );
+		if ( ! is_array( $raw ) ) {
+			return '';
+		}
+
+		$items = array();
+
+		foreach ( $raw as $source ) {
+			if ( ! is_array( $source ) || empty( $source['url'] ) ) {
+				continue;
+			}
+
+			$url = esc_url( trim( (string) $source['url'] ) );
+			if ( '' === $url ) {
+				continue;
+			}
+
+			$title = isset( $source['title'] ) ? trim( (string) $source['title'] ) : '';
+			$label = ( '' !== $title ) ? $title : $url;
+
+			$meta_bits = array();
+			if ( ! empty( $source['publisher'] ) ) {
+				$meta_bits[] = esc_html( trim( (string) $source['publisher'] ) );
+			}
+			if ( ! empty( $source['datePublished'] ) ) {
+				$meta_bits[] = esc_html( trim( (string) $source['datePublished'] ) );
+			}
+
+			$meta_html = '';
+			if ( ! empty( $meta_bits ) ) {
+				$meta_html = ' <span class="cat-term-panel__source-meta">(' . implode( ', ', $meta_bits ) . ')</span>';
+			}
+
+			$items[] = sprintf(
+				'<li class="cat-term-panel__source-item"><a class="cat-term-panel__source-link" href="%1$s">%2$s</a>%3$s</li>',
+				esc_url( $url ),
+				esc_html( $label ),
+				$meta_html
+			);
+		}
+
+		if ( empty( $items ) ) {
+			return '';
+		}
+
+		return sprintf(
+			'<section class="cat-term-panel__sources"><h3 class="cat-term-panel__section-heading">%1$s</h3><ul class="cat-term-panel__sources-list">%2$s</ul></section>',
+			esc_html__( 'Sources', 'context-authority-toolkit' ),
+			implode( '', $items )
+		);
+	}
+
+	/**
+	 * Compose the full term panel aside from enabled section fragments.
+	 *
+	 * Lead is never included here (Peacekeeper already prints it in the article).
+	 * Cite-this markup comes from Cat_Cite_This_Block::render_markup() — do not
+	 * reimplement citation/BibTeX/clipboard JS. Returns empty string when every
+	 * enabled section is empty.
+	 *
+	 * @param int   $term_post_id Term post ID.
+	 * @param array $sections {
+	 *     Optional section toggles. Missing keys default to true.
+	 *
+	 *     @type bool $aliases   Include aliases fragment.
+	 *     @type bool $related   Include related terms fragment.
+	 *     @type bool $same_as   Include sameAs / authority links fragment.
+	 *     @type bool $sources   Include sources fragment.
+	 *     @type bool $cite_this Include cite-this block markup.
+	 * }
+	 * @return string Escaped HTML or empty string.
+	 */
+	public function render_panel_html( $term_post_id, $sections = array() ) {
+		$term_post_id = absint( $term_post_id );
+		if ( $term_post_id <= 0 ) {
+			return '';
+		}
+
+		$defaults = array(
+			'aliases'   => true,
+			'related'   => true,
+			'same_as'   => true,
+			'sources'   => true,
+			'cite_this' => true,
+		);
+		$sections = wp_parse_args( is_array( $sections ) ? $sections : array(), $defaults );
+
+		$parts = array();
+
+		if ( ! empty( $sections['aliases'] ) ) {
+			$parts[] = $this->render_aliases_html( $term_post_id );
+		}
+		if ( ! empty( $sections['related'] ) ) {
+			$parts[] = $this->render_related_html( $term_post_id );
+		}
+		if ( ! empty( $sections['same_as'] ) ) {
+			$parts[] = $this->render_same_as_html( $term_post_id );
+		}
+		if ( ! empty( $sections['sources'] ) ) {
+			$parts[] = $this->render_sources_html( $term_post_id );
+		}
+		if ( ! empty( $sections['cite_this'] ) ) {
+			$cite_html = Cat_Cite_This_Block::render_markup();
+			if ( is_string( $cite_html ) && '' !== $cite_html ) {
+				$parts[] = '<section class="cat-term-panel__cite-this">' . $cite_html . '</section>';
+			}
+		}
+
+		$parts = array_filter( $parts );
+		if ( empty( $parts ) ) {
+			return '';
+		}
+
+		$heading_id = 'cat-term-panel-heading-' . $term_post_id;
+
+		return sprintf(
+			'<aside class="cat-term-panel" aria-labelledby="%1$s"><h2 id="%1$s" class="cat-term-panel__heading">%2$s</h2>%3$s</aside>',
+			esc_attr( $heading_id ),
+			esc_html__( 'About this term', 'context-authority-toolkit' ),
+			implode( '', $parts )
 		);
 	}
 
