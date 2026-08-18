@@ -854,6 +854,41 @@ cat_assert(
 	'Category taxonomy test failed: categorized term inDefinedTermSet must use Category archive URL.'
 );
 
+$secondary_cat = wp_insert_term( 'Other Primary', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'other-primary' ) );
+cat_assert(
+	! is_wp_error( $secondary_cat ),
+	'Category taxonomy test failed: could not create secondary Category fixture.'
+);
+$secondary_cat_id = (int) $secondary_cat['term_id'];
+
+$alpha_member_id = cat_create_term( 'Alpha Member', '<p>Alpha sorts first.</p>' );
+$test_post_ids[] = $alpha_member_id;
+wp_set_object_terms( $alpha_member_id, array( $cat_term_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+
+$secondary_only_id = cat_create_term( 'Secondary Only', '<p>Assigned but not primary.</p>' );
+$test_post_ids[] = $secondary_only_id;
+wp_set_object_terms( $secondary_only_id, array( $cat_term_id, $secondary_cat_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+update_post_meta( $secondary_only_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, $secondary_cat_id );
+
+$draft_member_id = wp_insert_post(
+	array(
+		'post_type'   => \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE,
+		'post_status' => 'draft',
+		'post_title'  => 'Draft Member',
+		'post_content'=> '<p>Draft must not appear.</p>',
+	)
+);
+$test_post_ids[] = $draft_member_id;
+wp_set_object_terms( $draft_member_id, array( $cat_term_id ), \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+update_post_meta( $draft_member_id, \ContextAuthorityToolkit\Cat_Term_Category::PRIMARY_META_KEY, $cat_term_id );
+
+$empty_cat = wp_insert_term( 'Empty Set', \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY, array( 'slug' => 'empty-set' ) );
+cat_assert(
+	! is_wp_error( $empty_cat ),
+	'Category taxonomy test failed: could not create empty Category fixture.'
+);
+$empty_cat_id = (int) $empty_cat['term_id'];
+
 $defined_set_schema = \ContextAuthorityToolkit\Cat_Term_Category::get_canonical_defined_term_set_schema( get_term( $cat_term_id ) );
 cat_assert(
 	! empty( $defined_set_schema['@type'] ) && 'DefinedTermSet' === $defined_set_schema['@type'],
@@ -862,6 +897,67 @@ cat_assert(
 cat_assert(
 	! empty( $defined_set_schema['name'] ) && 'SEO Authority' === $defined_set_schema['name'],
 	'Category taxonomy test failed: DefinedTermSet name must match Category.'
+);
+cat_assert(
+	! empty( $defined_set_schema['hasDefinedTerm'] ) && is_array( $defined_set_schema['hasDefinedTerm'] ),
+	'Category taxonomy test failed: Category with primary members must include hasDefinedTerm.'
+);
+$member_urls = array();
+$member_ids  = array();
+foreach ( $defined_set_schema['hasDefinedTerm'] as $member_node ) {
+	cat_assert(
+		! empty( $member_node['@type'] ) && 'DefinedTerm' === $member_node['@type'],
+		'Category taxonomy test failed: hasDefinedTerm members must be compact DefinedTerm nodes.'
+	);
+	cat_assert(
+		array( '@type', '@id', 'name', 'url' ) === array_keys( $member_node ),
+		'Category taxonomy test failed: hasDefinedTerm members must not include tooltip, sameAs, or citation fields.'
+	);
+	$member_urls[] = (string) $member_node['url'];
+	$member_ids[]  = (string) $member_node['@id'];
+}
+$entity_graph_url = get_permalink( $categorized_post_id );
+$alpha_member_url = get_permalink( $alpha_member_id );
+cat_assert(
+	is_string( $entity_graph_url ) && in_array( $entity_graph_url, $member_urls, true ),
+	'Category taxonomy test failed: primary member Entity Graph must appear in hasDefinedTerm.'
+);
+cat_assert(
+	is_string( $alpha_member_url ) && in_array( $alpha_member_url, $member_urls, true ),
+	'Category taxonomy test failed: primary member Alpha Member must appear in hasDefinedTerm.'
+);
+cat_assert(
+	in_array( trailingslashit( (string) $entity_graph_url ) . '#definedterm', $member_ids, true ),
+	'Category taxonomy test failed: hasDefinedTerm member @id must use permalink/#definedterm pattern.'
+);
+cat_assert(
+	! in_array( get_permalink( $secondary_only_id ), $member_urls, true ),
+	'Category taxonomy test failed: secondary-only assignment must not appear in hasDefinedTerm.'
+);
+cat_assert(
+	! in_array( get_permalink( $draft_member_id ), $member_urls, true ),
+	'Category taxonomy test failed: draft terms must not appear in hasDefinedTerm.'
+);
+cat_assert(
+	$member_urls === array_values( array_unique( $member_urls ) ),
+	'Category taxonomy test failed: hasDefinedTerm must not duplicate member URLs.'
+);
+$sorted_member_names = array_map(
+	static function ( $node ) {
+		return (string) $node['name'];
+	},
+	$defined_set_schema['hasDefinedTerm']
+);
+$sorted_expected = $sorted_member_names;
+sort( $sorted_expected, SORT_STRING );
+cat_assert(
+	$sorted_expected === $sorted_member_names,
+	'Category taxonomy test failed: hasDefinedTerm members must be sorted by title ascending.'
+);
+$empty_set_schema = \ContextAuthorityToolkit\Cat_Term_Category::get_canonical_defined_term_set_schema( get_term( $empty_cat_id ) );
+cat_assert(
+	empty( $empty_set_schema['hasDefinedTerm'] ),
+	'Category taxonomy test failed: empty membership must omit hasDefinedTerm.'
 );
 
 update_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_PERMALINK_INCLUDE_CATEGORY, true );
@@ -886,6 +982,8 @@ cat_assert(
 );
 
 wp_delete_term( $cat_term_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+wp_delete_term( $secondary_cat_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
+wp_delete_term( $empty_cat_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
 
 if ( null === $category_saved_enabled ) {
 	delete_option( \ContextAuthorityToolkit\Cat_Term_Settings::OPTION_CATEGORIES_ENABLED );

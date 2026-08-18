@@ -30,7 +30,7 @@ This document defines live behavior contracts that must remain true unless a cha
 - Consumers must read structure settings through `Cat_Term_Settings` getters.
 - All glossary cache invalidation must go through `Cat_Glossary::clear_items_cache()`; no module may hardcode cache keys.
 - When a glossary term has a Category assigned, canonical DefinedTerm `inDefinedTermSet` uses that Category archive URL; otherwise it falls back to the glossary archive URL.
-- Category archive pages emit canonical `DefinedTermSet` schema (standalone and SEO transport adapters).
+- Category archive pages emit canonical `DefinedTermSet` schema (standalone and SEO transport adapters). `hasDefinedTerm` lists compact `DefinedTerm` members (`@type`, `@id`, `name`, `url`) for published glossary terms whose **primary** Category is that taxonomy term (same resolution as `Cat_Term_Category::get_primary_category()` / `inDefinedTermSet`); sorted by title ascending; omitted when empty.
 
 ## Abilities / MCP contract
 
