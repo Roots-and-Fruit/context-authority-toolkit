@@ -392,6 +392,72 @@ cat_assert(
 	'Sanitizer test failed: source sanitizer should remove invalid rows and keep valid source entries.'
 );
 
+// Test 7b: Related terms sanitizer — published term only, unique, never self, cap 8.
+$related_keep_a = cat_create_term( 'Related Keep A', '<p>Keep A</p>', array(), 'Keep A tip' );
+$related_keep_b = cat_create_term( 'Related Keep B', '<p>Keep B</p>', array(), 'Keep B tip' );
+$related_self   = cat_create_term( 'Related Self Host', '<p>Self host</p>', array(), 'Self tip' );
+$related_draft  = wp_insert_post(
+	array(
+		'post_type'    => \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE,
+		'post_status'  => 'draft',
+		'post_title'   => 'Related Draft Term',
+		'post_content' => '<p>Draft</p>',
+	)
+);
+$related_trash = cat_create_term( 'Related Trash Term', '<p>Trash</p>', array(), 'Trash tip' );
+wp_trash_post( $related_trash );
+$related_page = wp_insert_post(
+	array(
+		'post_type'    => 'page',
+		'post_status'  => 'publish',
+		'post_title'   => 'Related Non Term Page',
+		'post_content' => '<p>Not a term</p>',
+	)
+);
+$test_post_ids[] = $related_keep_a;
+$test_post_ids[] = $related_keep_b;
+$test_post_ids[] = $related_self;
+$test_post_ids[] = $related_draft;
+$test_post_ids[] = $related_trash;
+$test_post_ids[] = $related_page;
+
+$extra_related_ids = array();
+for ( $i = 1; $i <= 8; $i++ ) {
+	$extra_id          = cat_create_term( 'Related Cap ' . $i, '<p>Cap ' . $i . '</p>', array(), 'Cap tip ' . $i );
+	$extra_related_ids[] = $extra_id;
+	$test_post_ids[]     = $extra_id;
+}
+
+$sanitized_related = $admin_handler->sanitize_related_terms_meta(
+	array(
+		$related_keep_a,
+		$related_keep_a,
+		$related_self,
+		$related_draft,
+		$related_trash,
+		$related_page,
+		0,
+		'not-an-id',
+		$related_keep_b,
+	),
+	$related_self
+);
+cat_assert(
+	array( (int) $related_keep_a, (int) $related_keep_b ) === $sanitized_related,
+	'Sanitizer test failed: related terms must keep unique published terms and reject self/draft/trash/non-term.'
+);
+
+$ninth_id            = cat_create_term( 'Related Cap Ninth', '<p>Ninth</p>', array(), 'Ninth tip' );
+$test_post_ids[]     = $ninth_id;
+$capped_related_input = array_merge( $extra_related_ids, array( $ninth_id ) );
+$capped_related       = $admin_handler->sanitize_related_terms_meta( $capped_related_input, 0 );
+cat_assert(
+	8 === count( $capped_related )
+		&& $extra_related_ids === $capped_related
+		&& ! in_array( (int) $ninth_id, $capped_related, true ),
+	'Sanitizer test failed: related terms must cap at 8 and drop the ninth ID.'
+);
+
 // Test 8: One-time migration copies legacy post_content only when tooltip meta is empty.
 delete_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_MIGRATION_OPTION_KEY );
 $migration_source_id = cat_create_term( 'Migration Term', 'Legacy content for migration.', array(), '' );
@@ -629,6 +695,91 @@ cat_assert(
 	false === strpos( $empty_tip_html, 'cat-term-single-lead' )
 		&& false === strpos( $empty_tip_html, 'cat-term-single-aliases' ),
 	'SEO Peacekeeper test failed: empty tooltip/alternatives must omit lead and alias chrome.'
+);
+
+// Test 12f: Related terms seeAlso + visible chrome.
+$related_target_a = cat_create_term( 'SeeAlso Target Alpha', '<p>Alpha related body.</p>', array(), 'Alpha tip' );
+$related_target_b = cat_create_term( 'SeeAlso Target Beta', '<p>Beta related body.</p>', array(), 'Beta tip' );
+$related_draft_vis = wp_insert_post(
+	array(
+		'post_type'    => \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE,
+		'post_status'  => 'draft',
+		'post_title'   => 'SeeAlso Draft Hidden',
+		'post_content' => '<p>Draft related body.</p>',
+	)
+);
+$related_host = cat_create_term( 'SeeAlso Host Term', '<p>Host term body for related chrome.</p>', array(), 'Host tip' );
+$test_post_ids[] = $related_target_a;
+$test_post_ids[] = $related_target_b;
+$test_post_ids[] = $related_draft_vis;
+$test_post_ids[] = $related_host;
+
+update_post_meta(
+	$related_host,
+	\ContextAuthorityToolkit\Cat_Glossary_Admin::RELATED_TERMS_META_KEY,
+	array( $related_target_a, $related_draft_vis, $related_host, $related_target_b )
+);
+
+$related_schema = $seo_peacekeeper->get_canonical_term_schema( $related_host );
+$alpha_url      = get_permalink( $related_target_a );
+$beta_url       = get_permalink( $related_target_b );
+cat_assert(
+	! empty( $related_schema['seeAlso'] )
+		&& is_array( $related_schema['seeAlso'] )
+		&& array( $alpha_url, $beta_url ) === $related_schema['seeAlso'],
+	'SEO Peacekeeper test failed: seeAlso must list related permalinks in stored order after read-filter.'
+);
+cat_assert(
+	'DefinedTerm' === $related_schema['@type'],
+	'SEO Peacekeeper test failed: canonical @type must stay DefinedTerm-only when seeAlso is present.'
+);
+$related_standalone = $seo_peacekeeper->build_standalone_term_graph( $related_host );
+cat_assert(
+	! empty( $related_standalone[0]['@type'] ) && 'WebPage' === $related_standalone[0]['@type']
+		&& ! isset( $related_standalone[0]['seeAlso'] )
+		&& ! empty( $related_standalone[1]['seeAlso'] ),
+	'SEO Peacekeeper test failed: seeAlso must live on DefinedTerm, not WebPage.'
+);
+
+$empty_related_term = cat_create_term( 'No Related Host', '<p>No related body.</p>', array(), 'No related tip' );
+$test_post_ids[]    = $empty_related_term;
+$empty_related_schema = $seo_peacekeeper->get_canonical_term_schema( $empty_related_term );
+cat_assert(
+	! isset( $empty_related_schema['seeAlso'] ),
+	'SEO Peacekeeper test failed: empty related list must omit seeAlso.'
+);
+
+$term_chrome     = new \ContextAuthorityToolkit\Cat_Term_Single_Chrome();
+$related_html    = $term_chrome->render_related_html( $related_host );
+$empty_related_html = $term_chrome->render_related_html( $empty_related_term );
+cat_assert(
+	false !== strpos( $related_html, 'cat-term-single-related' )
+		&& false !== strpos( $related_html, 'SeeAlso Target Alpha' )
+		&& false !== strpos( $related_html, 'SeeAlso Target Beta' )
+		&& false !== strpos( $related_html, esc_url( $alpha_url ) )
+		&& false !== strpos( $related_html, esc_url( $beta_url ) )
+		&& false === strpos( $related_html, 'SeeAlso Draft Hidden' ),
+	'SEO Peacekeeper test failed: related chrome must list published titles/permalinks and skip drafts.'
+);
+cat_assert(
+	'' === $empty_related_html,
+	'SEO Peacekeeper test failed: empty related list must omit the related block.'
+);
+
+$related_host_post = get_post( $related_host );
+setup_postdata( $related_host_post );
+$related_semantic = apply_filters(
+	'the_content',
+	'<p>Host term body for related chrome.</p>'
+);
+cat_assert(
+	false !== strpos( $related_semantic, 'cat-term-single-related' )
+		&& false !== strpos( $related_semantic, 'SeeAlso Target Alpha' )
+		&& preg_match(
+			'/<article[^>]*class="cat-defined-term-semantic"[^>]*>.*?<div itemprop="description"[^>]*>.*?<\/div>.*?cat-term-single-related/s',
+			$related_semantic
+		),
+	'SEO Peacekeeper test failed: related HTML must render inside DefinedTerm article outside description.'
 );
 
 // Test 12e: Adapter-style graph must not emit a second WebPage when one exists.

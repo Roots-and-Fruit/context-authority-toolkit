@@ -71,12 +71,13 @@ This document defines live behavior contracts that must remain true unless a cha
 
 - Context & Authority Toolkit remains the canonical owner of `DefinedTerm` data content.
 - Canonical schema is mapped from CAT term title/content/meta before any transport adapter runs.
-- `sameAs`, `citation`, and `inDefinedTermSet` must be preserved across all delivery modes.
+- `sameAs`, `citation`, `seeAlso`, and `inDefinedTermSet` must be preserved across all delivery modes.
 - Canonical term schema maps `cat_alternatives` into `alternateName` (array). Values equal to the term title (case-insensitive trim) are skipped. Empty alternatives omit `alternateName` and `termCode`.
 - Abbreviations from that same list also become `termCode` when they are 2–6 characters, letters/digits only, and fully uppercase (for example `WP`, `API`, `AEO`). Mixed-case values such as `SaaS` stay alias-only.
 - On term singles, standalone JSON-LD `@graph` includes a `WebPage` (`url` = term permalink) whose `mainEntity` is the DefinedTerm `@id` (`{permalink}/#definedterm`), plus the DefinedTerm node. Category archives remain `DefinedTermSet` only (no WebPage wrapper).
 - Yoast / Rank Math / SEOPress adapters must not append a second `WebPage`. When a page node already exists (`WebPage` or similar), they set `mainEntity` on that node and still append the CAT DefinedTerm. Yoast DefinedTerm injection remains via `wpseo_schema_graph_pieces`; `mainEntity` attachment uses `wpseo_schema_graph` when available.
-- URL-bearing schema fields (`sameAs`, citation `url`) only allow valid public `http/https` URLs.
+- URL-bearing schema fields (`sameAs`, `seeAlso`, citation `url`) only allow valid public `http/https` URLs.
+- `seeAlso` on the DefinedTerm node lists permalinks of explicitly related published glossary terms (`cat_related_terms`). Empty related lists omit `seeAlso` (and omit the visible related block). `seeAlso` is not placed on the WebPage node.
 - Citation `datePublished` accepts strict ISO format (`YYYY-MM-DD`) only.
 - Delivery mode is controlled by CAT settings:
   - `auto`: inject into detected SEO plugin transport when available
@@ -97,6 +98,7 @@ This document defines live behavior contracts that must remain true unless a cha
   - `itemprop="description"` with `role="definition"` includes the visible tooltip lead when rendered
   - Visible lead: when `cat_tooltip_content` is non-empty and the body does not already start with that same text (whitespace-normalized), `Cat_Term_Single_Chrome::render_lead_html()` prints it first inside the description wrapper. JSON-LD `description` stays tooltip-owned; tooltip is never copied into `post_content`; excerpt is not used as schema description.
   - Visible aliases: `Cat_Term_Single_Chrome::render_aliases_html()` prints an “Also known as” line with `itemprop="alternateName"` when alternatives exist; empty alternatives omit the line.
+  - Visible related terms: `Cat_Term_Single_Chrome::render_related_html()` prints a Related terms list of permalinks after aliases (inside the DefinedTerm article, outside `itemprop="description"`). Read-time filtering skips drafts, trash, non-term, unpublished, missing, and self. Empty related lists omit the block.
 - Read-aloud text is sanitized to remove shortcodes/control symbols and normalize whitespace.
 - Read-aloud text can be customized through `context_authority_toolkit_schema_read_aloud_text`.
 

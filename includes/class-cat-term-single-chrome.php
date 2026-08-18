@@ -1,8 +1,8 @@
 <?php
 /**
- * Visible chrome for glossary term singles (lead + aliases).
+ * Visible chrome for glossary term singles (lead + aliases + related).
  *
- * Phase 4/6 may extend this class; keep public methods stable and documented.
+ * Phase 6 may extend this class; keep public methods stable and documented.
  *
  * @package ContextAuthorityToolkit
  */
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * Renders visitor-facing lead and alias markup on term singles.
+ * Renders visitor-facing lead, alias, and related markup on term singles.
  */
 class Cat_Term_Single_Chrome {
 	/**
@@ -77,6 +77,98 @@ class Cat_Term_Single_Chrome {
 			esc_html__( 'Also known as', 'context-authority-toolkit' ) . ':',
 			implode( ', ', $parts )
 		);
+	}
+
+	/**
+	 * Render the visible Related terms list.
+	 *
+	 * Uses read-filtered related IDs (published term CPT only; skips drafts,
+	 * trash, non-term, missing, and self). Empty list returns an empty string
+	 * (no heading).
+	 *
+	 * @param int $term_post_id Term post ID.
+	 * @return string Escaped HTML or empty string.
+	 */
+	public function render_related_html( $term_post_id ) {
+		$related_ids = $this->get_related_term_ids( $term_post_id );
+		if ( empty( $related_ids ) ) {
+			return '';
+		}
+
+		$items = array();
+		foreach ( $related_ids as $related_id ) {
+			$permalink = get_permalink( $related_id );
+			$title     = get_the_title( $related_id );
+			if ( ! is_string( $permalink ) || '' === $permalink || ! is_string( $title ) || '' === $title ) {
+				continue;
+			}
+
+			$items[] = sprintf(
+				'<li class="cat-term-single-related__item"><a class="cat-term-single-related__link" href="%1$s">%2$s</a></li>',
+				esc_url( $permalink ),
+				esc_html( $title )
+			);
+		}
+
+		if ( empty( $items ) ) {
+			return '';
+		}
+
+		return sprintf(
+			'<nav class="cat-term-single-related" aria-label="%1$s"><h2 class="cat-term-single-related__heading">%2$s</h2><ul class="cat-term-single-related__list">%3$s</ul></nav>',
+			esc_attr__( 'Related terms', 'context-authority-toolkit' ),
+			esc_html__( 'Related terms', 'context-authority-toolkit' ),
+			implode( '', $items )
+		);
+	}
+
+	/**
+	 * Resolve related term post IDs for chrome and schema (read-time filter).
+	 *
+	 * Skips drafts, trash, non-term, unpublished, missing, and self even when
+	 * stale meta remains. Preserves stored order; caps at RELATED_TERMS_MAX.
+	 *
+	 * @param int $term_post_id Term post ID.
+	 * @return int[]
+	 */
+	public function get_related_term_ids( $term_post_id ) {
+		$term_post_id = absint( $term_post_id );
+		if ( $term_post_id <= 0 ) {
+			return array();
+		}
+
+		$raw = get_post_meta( $term_post_id, Cat_Glossary_Admin::RELATED_TERMS_META_KEY, true );
+		if ( ! is_array( $raw ) ) {
+			return array();
+		}
+
+		$ids  = array();
+		$seen = array();
+
+		foreach ( $raw as $raw_id ) {
+			$id = absint( $raw_id );
+			if ( $id <= 0 || $id === $term_post_id || isset( $seen[ $id ] ) ) {
+				continue;
+			}
+
+			$related_post = get_post( $id );
+			if (
+				! $related_post ||
+				Cat_Glossary_Admin::POST_TYPE !== $related_post->post_type ||
+				'publish' !== $related_post->post_status
+			) {
+				continue;
+			}
+
+			$seen[ $id ] = true;
+			$ids[]       = $id;
+
+			if ( count( $ids ) >= Cat_Glossary_Admin::RELATED_TERMS_MAX ) {
+				break;
+			}
+		}
+
+		return $ids;
 	}
 
 	/**

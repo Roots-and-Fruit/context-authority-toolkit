@@ -1,6 +1,6 @@
 /* global wp */
 ( function( wp ) {
-	if ( ! wp || ! wp.plugins || ! wp.editPost || ! wp.data || ! wp.components || ! wp.element || ! wp.i18n ) {
+	if ( ! wp || ! wp.plugins || ! wp.editPost || ! wp.data || ! wp.components || ! wp.element || ! wp.i18n || ! wp.apiFetch ) {
 		return;
 	}
 
@@ -10,16 +10,22 @@
 	var TextControl = wp.components.TextControl;
 	var TextareaControl = wp.components.TextareaControl;
 	var ToggleControl = wp.components.ToggleControl;
+	var FormTokenField = wp.components.FormTokenField;
 	var Button = wp.components.Button;
 	var createElement = wp.element.createElement;
+	var useState = wp.element.useState;
+	var useEffect = wp.element.useEffect;
 	var useDispatch = wp.data.useDispatch;
 	var useSelect = wp.data.useSelect;
 	var __ = wp.i18n.__;
+	var apiFetch = wp.apiFetch;
 
 	var ALTERNATIVES_META_KEY = 'cat_alternatives';
 	var TOOLTIP_META_KEY = 'cat_tooltip_content';
 	var SAME_AS_META_KEY = window.catToolkitEditor && window.catToolkitEditor.sameAsMeta ? window.catToolkitEditor.sameAsMeta : 'cat_same_as';
 	var SOURCES_META_KEY = window.catToolkitEditor && window.catToolkitEditor.sourcesMeta ? window.catToolkitEditor.sourcesMeta : 'cat_sources';
+	var RELATED_TERMS_META_KEY = window.catToolkitEditor && window.catToolkitEditor.relatedTermsMeta ? window.catToolkitEditor.relatedTermsMeta : 'cat_related_terms';
+	var RELATED_TERMS_MAX = window.catToolkitEditor && window.catToolkitEditor.relatedTermsMax ? window.catToolkitEditor.relatedTermsMax : 8;
 	var PUBLIC_DISABLE_AUTOLINK_META_KEY = window.catToolkitEditor && window.catToolkitEditor.disableAutolinkMeta ? window.catToolkitEditor.disableAutolinkMeta : 'cat_disable_autolinking';
 	var PUBLIC_POST_TYPES = window.catToolkitEditor && Array.isArray( window.catToolkitEditor.publicPostTypes ) ? window.catToolkitEditor.publicPostTypes : [ 'post', 'page', 'term' ];
 
@@ -94,9 +100,163 @@
 		};
 	}
 
+	function decodeTitle( rendered ) {
+		var textarea = document.createElement( 'textarea' );
+		textarea.innerHTML = rendered || '';
+		return textarea.value;
+	}
+
+	function RelatedTermsField( props ) {
+		var relatedIds = Array.isArray( props.value ) ? props.value.map( function( id ) {
+			return parseInt( id, 10 );
+		} ).filter( function( id ) {
+			return id > 0;
+		} ) : [];
+		var currentPostId = props.currentPostId || 0;
+		var onChange = props.onChange;
+		var titleById = useState( {} );
+		var setTitleById = titleById[ 1 ];
+		var titleMap = titleById[ 0 ];
+		var suggestions = useState( [] );
+		var setSuggestions = suggestions[ 1 ];
+		var suggestionList = suggestions[ 0 ];
+		var searchMap = useState( {} );
+		var setSearchMap = searchMap[ 1 ];
+		var searchTitleToId = searchMap[ 0 ];
+
+		useEffect( function() {
+			if ( ! relatedIds.length ) {
+				return;
+			}
+
+			var missing = relatedIds.filter( function( id ) {
+				return ! titleMap[ id ];
+			} );
+			if ( ! missing.length ) {
+				return;
+			}
+
+			apiFetch( {
+				path: '/wp/v2/term?include=' + missing.join( ',' ) + '&per_page=' + RELATED_TERMS_MAX + '&status=publish&_fields=id,title'
+			} ).then( function( posts ) {
+				if ( ! Array.isArray( posts ) ) {
+					return;
+				}
+
+				setTitleById( function( prev ) {
+					var next = Object.assign( {}, prev );
+					posts.forEach( function( post ) {
+						if ( post && post.id && post.title && post.title.rendered ) {
+							next[ post.id ] = decodeTitle( post.title.rendered );
+						}
+					} );
+					return next;
+				} );
+			} ).catch( function() {
+				// Leave unresolved IDs as fallback labels.
+			} );
+		}, [ relatedIds.join( ',' ) ] );
+
+		var tokens = relatedIds.map( function( id ) {
+			return titleMap[ id ] || ( '#' + id );
+		} );
+
+		var mergeTitleMaps = function( posts ) {
+			var nextTitles = Object.assign( {}, titleMap );
+			var nextSearch = Object.assign( {}, searchTitleToId );
+			posts.forEach( function( post ) {
+				if ( ! post || ! post.id || post.id === currentPostId ) {
+					return;
+				}
+				if ( ! post.title || ! post.title.rendered ) {
+					return;
+				}
+				var title = decodeTitle( post.title.rendered );
+				nextTitles[ post.id ] = title;
+				nextSearch[ title ] = post.id;
+			} );
+			setTitleById( nextTitles );
+			setSearchMap( nextSearch );
+			return nextSearch;
+		};
+
+		return createElement( FormTokenField, {
+			label: __( 'Related terms', 'context-authority-toolkit' ),
+			help: __( 'Search and attach up to eight published glossary terms. Relationships are one-way.', 'context-authority-toolkit' ),
+			value: tokens,
+			suggestions: suggestionList,
+			maxLength: RELATED_TERMS_MAX,
+			onInputChange: function( search ) {
+				if ( ! search || search.length < 2 ) {
+					setSuggestions( [] );
+					return;
+				}
+
+				apiFetch( {
+					path: '/wp/v2/term?search=' + encodeURIComponent( search ) + '&per_page=10&status=publish&_fields=id,title'
+				} ).then( function( posts ) {
+					if ( ! Array.isArray( posts ) ) {
+						setSuggestions( [] );
+						return;
+					}
+
+					var nextSearch = mergeTitleMaps( posts );
+					var titles = [];
+					posts.forEach( function( post ) {
+						if ( ! post || ! post.id || post.id === currentPostId ) {
+							return;
+						}
+						if ( relatedIds.indexOf( post.id ) !== -1 ) {
+							return;
+						}
+						var title = nextSearch && Object.keys( nextSearch ).length ? decodeTitle( post.title.rendered ) : decodeTitle( post.title.rendered );
+						if ( title && titles.indexOf( title ) === -1 ) {
+							titles.push( title );
+						}
+					} );
+					setSuggestions( titles );
+				} ).catch( function() {
+					setSuggestions( [] );
+				} );
+			},
+			onChange: function( nextTokens ) {
+				var capped = nextTokens.slice( 0, RELATED_TERMS_MAX );
+				var nextIds = [];
+				var seen = {};
+
+				capped.forEach( function( token ) {
+					var id = 0;
+					Object.keys( titleMap ).some( function( mapId ) {
+						if ( titleMap[ mapId ] === token ) {
+							id = parseInt( mapId, 10 );
+							return true;
+						}
+						return false;
+					} );
+					if ( ! id && searchTitleToId[ token ] ) {
+						id = parseInt( searchTitleToId[ token ], 10 );
+					}
+					if ( ! id && /^#\d+$/.test( token ) ) {
+						id = parseInt( token.slice( 1 ), 10 );
+					}
+					if ( ! id || id === currentPostId || seen[ id ] ) {
+						return;
+					}
+					seen[ id ] = true;
+					nextIds.push( id );
+				} );
+
+				onChange( nextIds );
+			}
+		} );
+	}
+
 	function TermSidebarFields() {
 		var postType = useSelect( function( select ) {
 			return select( 'core/editor' ).getCurrentPostType();
+		}, [] );
+		var currentPostId = useSelect( function( select ) {
+			return select( 'core/editor' ).getCurrentPostId();
 		}, [] );
 		var meta = useSelect( function( select ) {
 			return select( 'core/editor' ).getEditedPostAttribute( 'meta' ) || {};
@@ -146,6 +306,7 @@
 		var tooltipContent = 'string' === typeof meta[ TOOLTIP_META_KEY ] ? meta[ TOOLTIP_META_KEY ] : '';
 		var sameAsLinks = Array.isArray( meta[ SAME_AS_META_KEY ] ) ? meta[ SAME_AS_META_KEY ] : [];
 		var sources = Array.isArray( meta[ SOURCES_META_KEY ] ) ? meta[ SOURCES_META_KEY ] : [];
+		var relatedTerms = Array.isArray( meta[ RELATED_TERMS_META_KEY ] ) ? meta[ RELATED_TERMS_META_KEY ] : [];
 		var invalidSameAsCount = sameAsLinks.filter( function( link ) {
 			return ! isValidHttpUrl( link );
 		} ).length;
@@ -279,6 +440,17 @@
 						rows: 6,
 						onChange: function( value ) {
 							setMetaValue( TOOLTIP_META_KEY, value || '' );
+						}
+					} )
+				),
+				createElement(
+					PanelRow,
+					null,
+					createElement( RelatedTermsField, {
+						value: relatedTerms,
+						currentPostId: currentPostId,
+						onChange: function( ids ) {
+							setMetaValue( RELATED_TERMS_META_KEY, ids );
 						}
 					} )
 				),
