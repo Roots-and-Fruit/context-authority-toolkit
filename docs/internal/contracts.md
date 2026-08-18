@@ -48,9 +48,11 @@ This document defines live behavior contracts that must remain true unless a cha
 
 ## Markup and accessibility contract
 
-- Wrapped term renders as a button trigger inside `.cat-glossary-item-container`.
-- Trigger has:
-  - `type="button"`
+- Wrapped term renders as a crawlable link trigger inside `.cat-glossary-item-container`.
+- Trigger is an `<a>` with:
+  - `href` set to the term permalink
+  - `rel="help"`
+  - class `cat-glossary-item-trigger`
   - `aria-expanded`
   - `aria-haspopup="dialog"`
   - `aria-controls` linked to panel id
@@ -61,7 +63,7 @@ This document defines live behavior contracts that must remain true unless a cha
   - `hidden` initial state
 - Tooltip description is sourced from `cat_tooltip_content` meta (not term `post_content`).
 - Tooltip description treats HTML as plain text and supports line breaks.
-- Frontend content includes a user-facing `Learn more` link to the term permalink.
+- Frontend content includes a user-facing `Learn more` link to the term permalink inside the dialog.
 - `Learn more` link includes `rel="help"` to signal definitional context.
 - Legacy frontend text `Edit Term` must not appear.
 

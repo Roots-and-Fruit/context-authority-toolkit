@@ -58,7 +58,7 @@ These must remain true unless a change is explicitly approved:
 
 ## Accessibility contract (never break)
 
-- Trigger: `type="button"`, `aria-expanded`, `aria-haspopup="dialog"`, `aria-controls`
+- Trigger: crawlable `<a href="{term permalink}" rel="help" class="cat-glossary-item-trigger">` with `aria-expanded`, `aria-haspopup="dialog"`, `aria-controls`
 - Panel: `role="dialog"`, `aria-labelledby`, unique `id`, `hidden` initial state
 - `Esc` closes popover and returns focus to trigger.
 - Keyboard focus must be able to enter the popover and leave to close it.

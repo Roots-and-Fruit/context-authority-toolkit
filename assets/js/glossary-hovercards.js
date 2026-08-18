@@ -184,6 +184,7 @@
 				return;
 			}
 
+			// Keep href in the HTML for crawlers/no-JS; JS users pin/open the popover instead of navigating.
 			event.preventDefault();
 			if ( isPinned( item ) ) {
 				closeItem( item );
@@ -201,17 +202,40 @@
 
 	document.addEventListener( 'keydown', function( event ) {
 		var isEscapeKey = 'Escape' === event.key || 'Esc' === event.key || 27 === event.keyCode;
-		if ( ! isEscapeKey ) {
+		if ( isEscapeKey ) {
+			var activeItem = document.querySelector( itemSelector + '.is-visible' );
+			closeAllExcept( null );
+			if ( activeItem ) {
+				var parts = getItemParts( activeItem );
+				if ( parts ) {
+					parts.trigger.focus();
+				}
+			}
 			return;
 		}
 
-		var activeItem = document.querySelector( itemSelector + '.is-visible' );
-		closeAllExcept( null );
-		if ( activeItem ) {
-			var parts = getItemParts( activeItem );
-			if ( parts ) {
-				parts.trigger.focus();
-			}
+		// Space activates like a button; Enter synthesizes click and is handled there.
+		var isSpaceKey = ' ' === event.key || 'Spacebar' === event.key || 32 === event.keyCode;
+		if ( ! isSpaceKey ) {
+			return;
+		}
+
+		var trigger = closestFromTarget( event.target, triggerSelector );
+		if ( ! trigger || event.target !== trigger ) {
+			return;
+		}
+
+		var item = trigger.closest( itemSelector );
+		if ( ! item ) {
+			return;
+		}
+
+		event.preventDefault();
+		if ( isPinned( item ) ) {
+			closeItem( item );
+		} else {
+			openItem( item );
+			item.classList.add( 'is-pinned' );
 		}
 	} );
 }() );
