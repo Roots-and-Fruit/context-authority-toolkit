@@ -11,12 +11,12 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Loads component classes
   - Bootstraps plugin services on `plugins_loaded`
 - `includes/class-cat-glossary-admin.php`
-  - Registers glossary CPT (`term`)
+  - Registers glossary CPT (`term`) with a block `template` of five `cat-toolkit/term-section` slots on **new** terms (`template_lock` false; term body only — not the FSE `single-term` layout)
   - Registers REST-backed meta for block editor sidebar fields (including `cat_related_terms`)
   - Sanitizes `sameAs` and source repeater inputs to valid public `http/https` URLs and strict `YYYY-MM-DD` dates
   - Sanitizes related term IDs to published `term` posts only (unique, never self, cap 8, one-way)
   - Enqueues custom block editor sidebar controls (including Wikidata search path localization)
-  - Runs one-time tooltip content migration from legacy post content
+  - Runs one-time tooltip content migration from legacy (non-block) post content; never copies Gutenberg delimiters. A follow-up scrub clears tooltips that already stored block markup.
 - `includes/class-cat-glossary.php`
   - Loads published glossary items
   - Handles matching data and regex generation
@@ -32,9 +32,9 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Normalizes schema URL/date fields before output or adapter handoff
   - Injects schema into SEO plugin hooks or prints standalone JSON-LD (`WebPage` + `mainEntity` on term singles)
   - Adds semantic microdata wrappers (`aria-labelledby` + `dfn` id linkage) and read-aloud sanitization pipeline
-  - Delegates visible lead/alias/related HTML to `Cat_Term_Single_Chrome`
+  - Delegates visible lead/related HTML to `Cat_Term_Single_Chrome` (aliases stay in the term panel, not the article)
 - `includes/class-cat-term-single-chrome.php`
-  - Renders term-single visitor chrome: tooltip lead, “Also known as” aliases, Related terms list, sameAs authority links, sources/citations, and the composed term panel aside
+  - Renders term-single visitor chrome: tooltip lead, Related terms list, panel-only “Also known as” aliases, sameAs authority links, sources/citations, and the composed term panel aside
   - Public helpers for display aliases, termCode detection, lead-duplication comparison, related-term ID resolution, and panel section fragments
   - **Sole fragment renderer** for panel HTML; cite-this inside the panel calls `Cat_Cite_This_Block::render_markup()`
   - Related terms stay out of the glossary matcher / items cache (editor-chosen links only; not inferred from Category)
@@ -42,6 +42,10 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Placement only: Customizer controls, primary-sidebar inject, `the_content` aside fallback, FSE dynamic block + plugin `single-term` template
   - Options (plugin options, not theme_mods): `cat_term_panel_enabled`, `cat_term_panel_show_aliases`, `cat_term_panel_show_related`, `cat_term_panel_show_same_as`, `cat_term_panel_show_sources`, `cat_term_panel_show_cite_this`
   - On block themes, skips classic injection; registers `context-authority-toolkit//single-term` plus Design patterns tagged `single-term` only; does not edit theme files or the theme Sidebar part
+- `includes/class-cat-term-section-block.php`
+  - Registers `cat-toolkit/term-section` (slot heading + unrestricted inner blocks) and inserter pattern `cat-toolkit/term-page`
+  - Heading defaults are translated at render (`esc_html__()` / `wp.i18n.__()`); `post_content` stores the slot key, not the default English H2
+  - Supplies `get_new_term_template()` for the CPT body scaffold on new terms only
 - `includes/class-cat-term-panel-widget.php`
   - Classic `WP_Widget` that prints chrome panel HTML on term singles (respects shared printed-flag guard)
 - `includes/class-cat-glossary-hovercards.php`
@@ -81,7 +85,7 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
 ## Data model
 
 - CPT: `term` (post type key is fixed; rewrite base slug is configurable)
-- Post content: block-editor single term page content
+- Post content: block-editor single term page content. New terms start with five `cat-toolkit/term-section` blocks (CPT `template`; `template_lock` false). Existing terms are unchanged. Tooltip lead is not a section block.
 - Meta key: `cat_alternatives` (array of alternate names)
 - Meta key: `cat_tooltip_content` (plain-text tooltip body with line breaks)
 - Meta key: `cat_disable_autolinking` (boolean toggle for public content)

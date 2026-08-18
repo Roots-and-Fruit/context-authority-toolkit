@@ -40,6 +40,7 @@ require_once CAT_TOOLKIT_DIR . 'includes/class-cat-glossary-hovercards.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-seo-peacekeeper.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-single-chrome.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-cite-this-block.php';
+require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-section-block.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-panel.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-panel-widget.php';
 require_once CAT_TOOLKIT_DIR . 'includes/class-cat-term-settings.php';
@@ -60,6 +61,7 @@ function cat_toolkit_bootstrap() {
 	new Cat_Glossary_Handler( $glossary );
 	new Cat_SEO_Peacekeeper();
 	new Cat_Cite_This_Block();
+	new Cat_Term_Section_Block();
 	new Cat_Term_Panel();
 	new Cat_Term_Settings();
 	new Cat_Term_Category();
