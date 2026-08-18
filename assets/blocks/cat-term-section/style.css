@@ -1,0 +1,18 @@
+.wp-block-cat-toolkit-term-section,
+.cat-term-section {
+	box-sizing: border-box;
+	width: 100%;
+	margin-block: 1.5em;
+}
+
+.cat-term-section__heading {
+	margin: 0 0 0.5em;
+}
+
+.cat-term-section__content > *:first-child {
+	margin-top: 0;
+}
+
+.cat-term-section__content > *:last-child {
+	margin-bottom: 0;
+}

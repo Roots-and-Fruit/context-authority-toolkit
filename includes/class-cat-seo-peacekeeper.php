@@ -733,6 +733,8 @@ class Cat_SEO_Peacekeeper {
 	/**
 	 * Add semantic microdata wrapper on term pages.
 	 *
+	 * Visible aliases belong in the term panel, not this article.
+	 *
 	 * @param string $content Term content.
 	 * @return string
 	 */
@@ -754,7 +756,6 @@ class Cat_SEO_Peacekeeper {
 
 		$chrome        = $this->term_chrome instanceof Cat_Term_Single_Chrome ? $this->term_chrome : new Cat_Term_Single_Chrome();
 		$lead_html     = $chrome->render_lead_html( $term_id, $content );
-		$aliases_html  = $chrome->render_aliases_html( $term_id );
 		$related_html  = $chrome->render_related_html( $term_id );
 		$term_label_id = sprintf( 'cat-defined-term-name-%d', (int) $term_id );
 		$semantic      = $this->inject_defined_term_name_markup( $content, $title, $term_label_id );
@@ -767,11 +768,10 @@ class Cat_SEO_Peacekeeper {
 		}
 
 		return sprintf(
-			'<article%1$s><div itemprop="description" role="definition">%2$s%3$s</div>%4$s%5$s</article>',
+			'<article%1$s><div itemprop="description" role="definition">%2$s%3$s</div>%4$s</article>',
 			$article_attributes,
 			$lead_html,
 			$description,
-			$aliases_html,
 			$related_html
 		);
 	}

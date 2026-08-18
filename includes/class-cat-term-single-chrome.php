@@ -53,6 +53,8 @@ class Cat_Term_Single_Chrome {
 	/**
 	 * Render the visible “Also known as” aliases line.
 	 *
+	 * Used by the term panel only. The DefinedTerm article does not print
+	 * aliases; JSON-LD `alternateName` still comes from get_display_aliases().
 	 * Skips values equal to the term title (case-insensitive trim). Returns an
 	 * empty string when there are no display aliases.
 	 *

@@ -22,7 +22,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 require_once ABSPATH . 'wp-admin/includes/user.php';
 
-if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Single_Chrome' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Panel' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Abilities' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Wikidata_Lookup' ) ) {
+if ( ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Handler' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Glossary_Admin' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_SEO_Peacekeeper' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Single_Chrome' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Panel' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Section_Block' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Settings' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Term_Category' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Abilities' ) || ! class_exists( '\\ContextAuthorityToolkit\\Cat_Wikidata_Lookup' ) ) {
 	echo "Plugin classes are unavailable. Ensure plugin is active before running tests.\n";
 	exit( 1 );
 }
@@ -159,6 +159,8 @@ $admin_handler = new \ContextAuthorityToolkit\Cat_Glossary_Admin();
 $admin_handler->register_post_type();
 $admin_handler->register_post_meta();
 $seo_peacekeeper = new \ContextAuthorityToolkit\Cat_SEO_Peacekeeper();
+$restore_tooltip_migration = get_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_MIGRATION_OPTION_KEY );
+$restore_tooltip_scrub     = get_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_BLOCK_MARKUP_SCRUB_OPTION_KEY );
 
 $test_post_ids = array();
 
@@ -473,10 +475,18 @@ cat_assert(
 
 // Test 8: One-time migration copies legacy post_content only when tooltip meta is empty.
 delete_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_MIGRATION_OPTION_KEY );
+delete_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_BLOCK_MARKUP_SCRUB_OPTION_KEY );
 $migration_source_id = cat_create_term( 'Migration Term', 'Legacy content for migration.', array(), '' );
 $test_post_ids[]     = $migration_source_id;
 $migration_target_id = cat_create_term( 'Migration Already Set', 'Should not overwrite.', array(), 'Existing tooltip text.' );
 $test_post_ids[]     = $migration_target_id;
+$block_scaffold_id   = cat_create_term(
+	'Block Scaffold Migration',
+	"<!-- wp:cat-toolkit/term-section {\"section\":\"example\",\"customHeading\":\"What is this Term?\"} -->\n<!-- wp:paragraph -->\n<p> </p>\n<!-- /wp:paragraph -->\n<!-- /wp:cat-toolkit/term-section -->",
+	array(),
+	''
+);
+$test_post_ids[] = $block_scaffold_id;
 $admin_handler->maybe_run_tooltip_migration();
 
 $migrated_tooltip = get_post_meta( $migration_source_id, \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_META_KEY, true );
@@ -488,6 +498,44 @@ $preserved_tooltip = get_post_meta( $migration_target_id, \ContextAuthorityToolk
 cat_assert(
 	'Existing tooltip text.' === $preserved_tooltip,
 	'Migration test failed: existing tooltip meta should not be overwritten.'
+);
+cat_assert(
+	'' === (string) get_post_meta( $block_scaffold_id, \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_META_KEY, true ),
+	'Migration test failed: Gutenberg term-section post_content must not copy into tooltip meta.'
+);
+
+$block_only_tooltip = $admin_handler->sanitize_tooltip_meta(
+	"<!-- wp:cat-toolkit/term-section\n{\"customHeading\":\"What is this Term?\"} -->\n<!-- wp:paragraph -->\n<p> </p>\n<!-- /wp:paragraph -->\n<!-- /wp:cat-toolkit/term-section -->"
+);
+cat_assert(
+	'' === $block_only_tooltip,
+	'Tooltip sanitizer test failed: block markup-only tooltip must sanitize to empty.'
+);
+cat_assert(
+	"Tooltip line one.\n<strong>Tooltip line two</strong>" === $admin_handler->sanitize_tooltip_meta( "Tooltip line one.\n<strong>Tooltip line two</strong>" ),
+	'Tooltip sanitizer test failed: intentional plain-text angle brackets must be preserved.'
+);
+
+delete_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_BLOCK_MARKUP_SCRUB_OPTION_KEY );
+$polluted_tooltip_id = cat_create_term( 'Polluted Tooltip Term', '<p>Body stays in post_content.</p>', array(), '' );
+$test_post_ids[]     = $polluted_tooltip_id;
+$polluted_markup     = "<!-- wp:cat-toolkit/term-section {\"customHeading\":\"What is this Term?\"} -->\n<!-- wp:paragraph -->\n<p> </p>\n<!-- /wp:paragraph -->\n<!-- /wp:cat-toolkit/term-section -->";
+delete_post_meta( $polluted_tooltip_id, \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_META_KEY );
+global $wpdb;
+$wpdb->insert(
+	$wpdb->postmeta,
+	array(
+		'post_id'    => $polluted_tooltip_id,
+		'meta_key'   => \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_META_KEY,
+		'meta_value' => $polluted_markup,
+	),
+	array( '%d', '%s', '%s' )
+);
+clean_post_cache( $polluted_tooltip_id );
+$admin_handler->maybe_scrub_block_markup_tooltips();
+cat_assert(
+	'' === (string) get_post_meta( $polluted_tooltip_id, \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_META_KEY, true ),
+	'Tooltip scrub test failed: stored Gutenberg markup in cat_tooltip_content must be cleared.'
 );
 
 // Migration should not run again once option is set.
@@ -648,7 +696,7 @@ cat_assert(
 	'SEO Peacekeeper test failed: empty alternatives must omit alternateName and termCode.'
 );
 
-// Test 12d: Visible lead + aliases chrome on term singles.
+// Test 12d: Visible lead in the article; aliases only in the term panel.
 $alias_term_post = get_post( $alias_term_id );
 setup_postdata( $alias_term_post );
 $alias_semantic = apply_filters(
@@ -661,11 +709,22 @@ cat_assert(
 		&& false !== strpos( $alias_semantic, 'itemprop="description"' ),
 	'SEO Peacekeeper test failed: non-empty tooltip should render as visible lead inside description.'
 );
+$alias_article = '';
+if ( preg_match( '/<article[^>]*class="cat-defined-term-semantic"[^>]*>(.*)<\/article>/s', $alias_semantic, $alias_article_match ) ) {
+	$alias_article = $alias_article_match[1];
+}
 cat_assert(
-	false !== strpos( $alias_semantic, 'Also known as' )
-		&& false !== strpos( $alias_semantic, 'itemprop="alternateName">WP</span>' )
-		&& false !== strpos( $alias_semantic, 'itemprop="alternateName">SaaS</span>' ),
-	'SEO Peacekeeper test failed: aliases should render with alternateName microdata.'
+	'' !== $alias_article
+		&& false === strpos( $alias_article, 'cat-term-single-aliases' )
+		&& false === strpos( $alias_article, 'Also known as' ),
+	'SEO Peacekeeper test failed: DefinedTerm article must not print Also known as aliases.'
+);
+$alias_panel_html = ( new \ContextAuthorityToolkit\Cat_Term_Single_Chrome() )->render_aliases_html( $alias_term_id );
+cat_assert(
+	false !== strpos( $alias_panel_html, 'Also known as' )
+		&& false !== strpos( $alias_panel_html, 'itemprop="alternateName">WP</span>' )
+		&& false !== strpos( $alias_panel_html, 'itemprop="alternateName">SaaS</span>' ),
+	'Term chrome test failed: panel aliases must still render with alternateName microdata.'
 );
 cat_assert(
 	$alias_schema['description'] === 'WordPress is free and open-source CMS software.',
@@ -2131,9 +2190,11 @@ restore_error_handler();
 cat_assert(
 	false !== strpos( $full_panel, 'cat-term-panel' )
 		&& false !== strpos( $full_panel, 'About this term' )
+		&& false !== strpos( $full_panel, 'Also known as' )
+		&& false !== strpos( $full_panel, 'itemprop="alternateName">PT</span>' )
 		&& false !== strpos( $full_panel, 'cat-cite-this' )
 		&& false !== strpos( $full_panel, 'cat-cite-this__button' ),
-	'Term panel test failed: panel composer must include aside + cite-this markup from the block renderer.'
+	'Term panel test failed: panel composer must include aside, aliases, and cite-this markup from the block renderer.'
 );
 cat_assert(
 	! $cite_wrapper_warned,
@@ -2226,11 +2287,14 @@ if ( function_exists( 'register_block_template' ) ) {
 	$registered_term_template = WP_Block_Templates_Registry::get_instance()->get_by_slug(
 		\ContextAuthorityToolkit\Cat_Term_Panel::BLOCK_TEMPLATE_SLUG
 	);
+	$registered_term_template_content = (string) $registered_term_template->content;
 	cat_assert(
 		$registered_term_template instanceof WP_Block_Template
-			&& false !== strpos( (string) $registered_term_template->content, 'cat-toolkit/term-panel' )
-			&& false !== strpos( (string) $registered_term_template->content, 'wp:columns' ),
-		'Term panel test failed: registered single-term template must include columns and the term-panel block.'
+			&& false !== strpos( $registered_term_template_content, 'cat-toolkit/term-panel' )
+			&& false !== strpos( $registered_term_template_content, 'wp:columns' )
+			&& false !== strpos( $registered_term_template_content, 'wp:post-content {"layout":{"type":"constrained"}}' )
+			&& false === strpos( $registered_term_template_content, '"justifyContent":"left"' ),
+		'Term panel test failed: registered single-term template must include columns and the term-panel block, with centered constrained post-content (no left justify).'
 	);
 }
 
@@ -2252,6 +2316,114 @@ cat_assert(
 	'Term panel test failed: Design starters must use templateTypes single-term only (not single/posts).'
 );
 
+$term_section_block = WP_Block_Type_Registry::get_instance()->get_registered(
+	\ContextAuthorityToolkit\Cat_Term_Section_Block::BLOCK_NAME
+);
+$term_section_has_editor_script = $term_section_block instanceof WP_Block_Type
+	&& (
+		! empty( $term_section_block->editor_script )
+		|| ( isset( $term_section_block->editor_script_handles ) && ! empty( $term_section_block->editor_script_handles ) )
+	);
+cat_assert(
+	$term_section_has_editor_script,
+	'Term section test failed: cat-toolkit/term-section must register an editor script.'
+);
+
+$term_page_pattern = $patterns->get_registered( \ContextAuthorityToolkit\Cat_Term_Section_Block::PATTERN_NAME );
+$term_page_types   = ( isset( $term_page_pattern['templateTypes'] ) && is_array( $term_page_pattern['templateTypes'] ) )
+	? $term_page_pattern['templateTypes']
+	: array();
+$term_page_content = isset( $term_page_pattern['content'] ) ? (string) $term_page_pattern['content'] : '';
+cat_assert(
+	$patterns->is_registered( \ContextAuthorityToolkit\Cat_Term_Section_Block::PATTERN_NAME )
+		&& false !== strpos( $term_page_content, '"section":"what"' )
+		&& false !== strpos( $term_page_content, '"section":"how"' )
+		&& false !== strpos( $term_page_content, '"section":"examples"' )
+		&& false !== strpos( $term_page_content, '"section":"mistakes"' )
+		&& false !== strpos( $term_page_content, '"section":"takeaways"' )
+		&& false === strpos( $term_page_content, 'How it works' )
+		&& ! in_array( 'single', $term_page_types, true )
+		&& ! in_array( 'posts', $term_page_types, true ),
+	'Term section test failed: cat-toolkit/term-page must insert five slot keys without default English headings or single/posts templateTypes.'
+);
+
+$term_post_type = get_post_type_object( \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE );
+$term_template  = ( $term_post_type && is_array( $term_post_type->template ) ) ? $term_post_type->template : array();
+$term_template_slots = array();
+foreach ( $term_template as $template_block ) {
+	if ( isset( $template_block[0], $template_block[1]['section'] ) && \ContextAuthorityToolkit\Cat_Term_Section_Block::BLOCK_NAME === $template_block[0] ) {
+		$term_template_slots[] = $template_block[1]['section'];
+	}
+}
+cat_assert(
+	array( 'what', 'how', 'examples', 'mistakes', 'takeaways' ) === $term_template_slots
+		&& empty( $term_post_type->template_lock ),
+	'Term section test failed: CPT template must seed five unlocked term-section slots on new terms.'
+);
+
+$section_renderer = new \ContextAuthorityToolkit\Cat_Term_Section_Block( false );
+$default_section  = $section_renderer->render_block(
+	array(
+		'section' => 'how',
+	),
+	'<p>Because extractable chunks help answer engines.</p>'
+);
+cat_assert(
+	false !== strpos( $default_section, 'data-cat-section="how"' )
+		&& false !== strpos( $default_section, 'class="cat-term-section' )
+		&& false !== strpos( $default_section, '>' . __( 'How it works', 'context-authority-toolkit' ) . '</h2>' )
+		&& false !== strpos( $default_section, 'Because extractable chunks help answer engines.' ),
+	'Term section test failed: empty custom heading must render the translated default H2 and slot attribute.'
+);
+
+$custom_section = $section_renderer->render_block(
+	array(
+		'section'       => 'mistakes',
+		'customHeading' => 'What people get wrong',
+	),
+	'<ul><li>What is it?</li></ul>'
+);
+cat_assert(
+	false !== strpos( $custom_section, 'data-cat-section="mistakes"' )
+		&& false !== strpos( $custom_section, '>What people get wrong</h2>' )
+		&& false === strpos( $custom_section, '>' . __( 'Common mistakes', 'context-authority-toolkit' ) . '</h2>' )
+		&& false !== strpos( $custom_section, '<ul><li>What is it?</li></ul>' ),
+	'Term section test failed: customHeading must replace the default H2 without changing the slot.'
+);
+
+$fallback_section = $section_renderer->render_block(
+	array(
+		'section' => 'not-a-slot',
+	),
+	''
+);
+cat_assert(
+	false !== strpos( $fallback_section, 'data-cat-section="what"' )
+		&& false !== strpos( $fallback_section, '>' . __( 'What it is', 'context-authority-toolkit' ) . '</h2>' ),
+	'Term section test failed: unknown slots must fall back to what.'
+);
+
+$section_schema_term = cat_create_term(
+	'Section Schema Term',
+	'<!-- wp:cat-toolkit/term-section {"section":"how"} --><!-- wp:paragraph --><p>What is a section?</p><!-- /wp:paragraph --><!-- /wp:cat-toolkit/term-section -->',
+	array(),
+	'A section is an extractable chunk on a glossary term page.'
+);
+$test_post_ids[]     = $section_schema_term;
+$section_schema      = $seo_peacekeeper->get_canonical_term_schema( $section_schema_term );
+$section_graph       = $seo_peacekeeper->build_standalone_term_graph( $section_schema_term );
+$section_graph_json  = wp_json_encode( $section_graph );
+cat_assert(
+	'DefinedTerm' === $section_schema['@type']
+		&& false === strpos( wp_json_encode( $section_schema ), 'FAQPage' )
+		&& is_string( $section_graph_json )
+		&& false === strpos( $section_graph_json, 'FAQPage' )
+		&& false === strpos( $section_graph_json, 'HowTo' )
+		&& false === strpos( $section_graph_json, 'Speakable' )
+		&& false === strpos( $section_graph_json, 'LearningResource' ),
+	'Term section test failed: term-section content must not add FAQPage or other parked schema types.'
+);
+
 wp_reset_postdata();
 foreach ( $test_post_ids as $test_post_id ) {
 	wp_delete_post( (int) $test_post_id, true );
@@ -2260,7 +2432,16 @@ foreach ( $test_post_ids as $test_post_id ) {
 if ( ! is_wp_error( $subscriber_user ) ) {
 	wp_delete_user( (int) $subscriber_user );
 }
-delete_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_MIGRATION_OPTION_KEY );
+if ( $restore_tooltip_migration ) {
+	update_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_MIGRATION_OPTION_KEY, $restore_tooltip_migration, false );
+} else {
+	delete_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_MIGRATION_OPTION_KEY );
+}
+if ( $restore_tooltip_scrub ) {
+	update_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_BLOCK_MARKUP_SCRUB_OPTION_KEY, $restore_tooltip_scrub, false );
+} else {
+	delete_option( \ContextAuthorityToolkit\Cat_Glossary_Admin::TOOLTIP_BLOCK_MARKUP_SCRUB_OPTION_KEY );
+}
 
 if ( ! empty( $failures ) ) {
 	echo "Behavior/Security tests FAILED:\n";

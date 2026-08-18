@@ -34,7 +34,8 @@ The behavior harness is expected to cover schema/accessibility invariants, inclu
 - semantic wrapper linkage (`aria-labelledby` tied to the term `dfn` id),
 - canonical schema parity (`sameAs` and `citation` preservation),
 - strict URL/date sanitization behavior for source metadata,
-- editor Wikidata lookup permission/SSRF guards with mocked `pre_http_request` (no live Wikidata calls).
+- editor Wikidata lookup permission/SSRF guards with mocked `pre_http_request` (no live Wikidata calls),
+- term-section heading i18n (slot key persisted; translated default H2; `customHeading` override), CPT body template of five unlocked slots (`what`, `how`, `examples`, `mistakes`, `takeaways`), inserter pattern `cat-toolkit/term-page` without `single`/`posts` templateTypes, and no FAQPage/HowTo/Speakable/LearningResource from section content.
 
 ### 3) Plugin Check gate
 

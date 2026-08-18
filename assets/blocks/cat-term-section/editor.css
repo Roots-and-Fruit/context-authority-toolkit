@@ -1,0 +1,11 @@
+.editor-styles-wrapper .wp-block-cat-toolkit-term-section.cat-term-section {
+	box-sizing: border-box;
+	width: 100%;
+	border: 1px dashed currentColor;
+	padding: 1rem;
+	border-radius: 2px;
+}
+
+.editor-styles-wrapper .wp-block-cat-toolkit-term-section .cat-term-section__heading {
+	margin: 0 0 0.5rem;
+}

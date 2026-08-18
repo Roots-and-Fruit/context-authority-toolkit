@@ -61,6 +61,11 @@ class Cat_Glossary_Admin {
 	const TOOLTIP_MIGRATION_OPTION_KEY = 'cat_tooltip_meta_migration_v1';
 
 	/**
+	 * One-time scrub of Gutenberg markup accidentally stored in tooltip meta.
+	 */
+	const TOOLTIP_BLOCK_MARKUP_SCRUB_OPTION_KEY = 'cat_tooltip_block_markup_scrub_v1';
+
+	/**
 	 * Wire admin hooks.
 	 */
 	public function __construct() {
@@ -79,7 +84,7 @@ class Cat_Glossary_Admin {
 		register_post_type(
 			self::POST_TYPE,
 			array(
-				'labels'       => array(
+				'labels'        => array(
 					'name'               => __( 'Terms', 'context-authority-toolkit' ),
 					'singular_name'      => __( 'Glossary Term', 'context-authority-toolkit' ),
 					'add_new'            => __( 'Add New Term', 'context-authority-toolkit' ),
@@ -93,16 +98,18 @@ class Cat_Glossary_Admin {
 					'menu_name'          => __( 'Term', 'context-authority-toolkit' ),
 					'name_admin_bar'     => __( 'Glossary Term', 'context-authority-toolkit' ),
 				),
-				'public'       => true,
-				'show_ui'      => true,
-				'show_in_rest' => true,
-				'menu_icon'    => add_query_arg( 'ver', CAT_TOOLKIT_VERSION, CAT_TOOLKIT_URL . 'assets/images/term-icon.svg' ),
-				'hierarchical' => false,
-				'rewrite'      => array(
+				'public'        => true,
+				'show_ui'       => true,
+				'show_in_rest'  => true,
+				'menu_icon'     => add_query_arg( 'ver', CAT_TOOLKIT_VERSION, CAT_TOOLKIT_URL . 'assets/images/term-icon.svg' ),
+				'hierarchical'  => false,
+				'rewrite'       => array(
 					'slug'       => self::get_rewrite_slug(),
 					'with_front' => false,
 				),
-				'supports'     => array( 'title', 'editor', 'excerpt', 'author', 'revisions', 'custom-fields' ),
+				'supports'      => array( 'title', 'editor', 'excerpt', 'author', 'revisions', 'custom-fields' ),
+				'template'      => Cat_Term_Section_Block::get_new_term_template(),
+				'template_lock' => false,
 			)
 		);
 
@@ -367,6 +374,9 @@ class Cat_Glossary_Admin {
 	/**
 	 * Sanitize tooltip text meta.
 	 *
+	 * Plain text with line breaks. Gutenberg block delimiters are stripped so
+	 * term-section scaffolds cannot leak into hovercards.
+	 *
 	 * @param mixed $tooltip Tooltip text.
 	 * @return string
 	 */
@@ -375,10 +385,33 @@ class Cat_Glossary_Admin {
 			return '';
 		}
 
+		if ( self::contains_block_markup( $tooltip ) ) {
+			$stripped = preg_replace( '/<!--\s+\/?wp:.*?-->/s', '', $tooltip );
+			$tooltip  = is_string( $stripped ) ? $stripped : '';
+			if ( '' === trim( wp_strip_all_tags( $tooltip ) ) ) {
+				return '';
+			}
+			$tooltip = wp_strip_all_tags( $tooltip );
+		}
+
 		$tooltip = wp_check_invalid_utf8( $tooltip );
 		$tooltip = preg_replace( "/\r\n|\r/", "\n", $tooltip );
 
 		return trim( $tooltip );
+	}
+
+	/**
+	 * Whether a string contains Gutenberg block comment delimiters.
+	 *
+	 * @param mixed $content Candidate content.
+	 * @return bool
+	 */
+	public static function contains_block_markup( $content ) {
+		if ( ! is_string( $content ) || '' === $content ) {
+			return false;
+		}
+
+		return (bool) preg_match( '/<!--\s+\/?wp:/', $content );
 	}
 
 	/**
@@ -611,10 +644,48 @@ class Cat_Glossary_Admin {
 	/**
 	 * Migrate legacy post content into tooltip meta once.
 	 *
+	 * Skips Gutenberg `post_content` (term-section scaffolds, classic blocks).
+	 * After that, scrubs tooltips that already stored block markup.
+	 *
 	 * @return void
 	 */
 	public function maybe_run_tooltip_migration() {
-		if ( get_option( self::TOOLTIP_MIGRATION_OPTION_KEY ) ) {
+		if ( ! get_option( self::TOOLTIP_MIGRATION_OPTION_KEY ) ) {
+			$term_posts = get_posts(
+				array(
+					'post_type'      => self::POST_TYPE,
+					'post_status'    => 'any',
+					'posts_per_page' => -1,
+				)
+			);
+
+			foreach ( $term_posts as $term_post ) {
+				$existing_tooltip = get_post_meta( $term_post->ID, self::TOOLTIP_META_KEY, true );
+				if ( is_string( $existing_tooltip ) && '' !== trim( $existing_tooltip ) ) {
+					continue;
+				}
+
+				$legacy_content = is_string( $term_post->post_content ) ? trim( $term_post->post_content ) : '';
+				if ( '' === $legacy_content || self::contains_block_markup( $legacy_content ) ) {
+					continue;
+				}
+
+				update_post_meta( $term_post->ID, self::TOOLTIP_META_KEY, $legacy_content );
+			}
+
+			update_option( self::TOOLTIP_MIGRATION_OPTION_KEY, 1, false );
+		}
+
+		$this->maybe_scrub_block_markup_tooltips();
+	}
+
+	/**
+	 * Clear tooltip meta that is Gutenberg block markup.
+	 *
+	 * @return void
+	 */
+	public function maybe_scrub_block_markup_tooltips() {
+		if ( get_option( self::TOOLTIP_BLOCK_MARKUP_SCRUB_OPTION_KEY ) ) {
 			return;
 		}
 
@@ -628,18 +699,17 @@ class Cat_Glossary_Admin {
 
 		foreach ( $term_posts as $term_post ) {
 			$existing_tooltip = get_post_meta( $term_post->ID, self::TOOLTIP_META_KEY, true );
-			if ( is_string( $existing_tooltip ) && '' !== trim( $existing_tooltip ) ) {
+			if ( ! self::contains_block_markup( $existing_tooltip ) ) {
 				continue;
 			}
 
-			$legacy_content = is_string( $term_post->post_content ) ? trim( $term_post->post_content ) : '';
-			if ( '' === $legacy_content ) {
-				continue;
-			}
-
-			update_post_meta( $term_post->ID, self::TOOLTIP_META_KEY, $legacy_content );
+			update_post_meta(
+				$term_post->ID,
+				self::TOOLTIP_META_KEY,
+				$this->sanitize_tooltip_meta( $existing_tooltip )
+			);
 		}
 
-		update_option( self::TOOLTIP_MIGRATION_OPTION_KEY, 1, false );
+		update_option( self::TOOLTIP_BLOCK_MARKUP_SCRUB_OPTION_KEY, 1, false );
 	}
 }
