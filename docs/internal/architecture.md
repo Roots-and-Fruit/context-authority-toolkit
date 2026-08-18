@@ -39,9 +39,9 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - **Sole fragment renderer** for panel HTML; cite-this inside the panel calls `Cat_Cite_This_Block::render_markup()`
   - Related terms stay out of the glossary matcher / items cache (editor-chosen links only; not inferred from Category)
 - `includes/class-cat-term-panel.php`
-  - Placement only: Customizer controls, primary-sidebar inject, `the_content` aside fallback, FSE dynamic block + pattern `cat-toolkit/term-panel`
+  - Placement only: Customizer controls, primary-sidebar inject, `the_content` aside fallback, FSE dynamic block + plugin `single-term` template
   - Options (plugin options, not theme_mods): `cat_term_panel_enabled`, `cat_term_panel_show_aliases`, `cat_term_panel_show_related`, `cat_term_panel_show_same_as`, `cat_term_panel_show_sources`, `cat_term_panel_show_cite_this`
-  - On block themes, skips classic injection (pattern is opt-in); does not register a new widget area or ship theme templates
+  - On block themes, skips classic injection; registers `context-authority-toolkit//single-term` plus Design patterns tagged `single-term` only; does not edit theme files or the theme Sidebar part
 - `includes/class-cat-term-panel-widget.php`
   - Classic `WP_Widget` that prints chrome panel HTML on term singles (respects shared printed-flag guard)
 - `includes/class-cat-glossary-hovercards.php`
