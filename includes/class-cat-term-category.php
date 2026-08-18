@@ -250,6 +250,95 @@ class Cat_Term_Category {
 	}
 
 	/**
+	 * Build compact DefinedTerm schema for a published glossary term post.
+	 *
+	 * @param \WP_Post $term_post Term post.
+	 * @return array
+	 */
+	public static function get_compact_defined_term_schema( $term_post ) {
+		if ( ! ( $term_post instanceof \WP_Post ) || Cat_Glossary_Admin::POST_TYPE !== $term_post->post_type ) {
+			return array();
+		}
+
+		if ( 'publish' !== $term_post->post_status ) {
+			return array();
+		}
+
+		$term_url = get_permalink( $term_post->ID );
+		if ( ! $term_url ) {
+			return array();
+		}
+
+		return array(
+			'@type' => 'DefinedTerm',
+			'@id'   => trailingslashit( (string) $term_url ) . '#definedterm',
+			'name'  => (string) $term_post->post_title,
+			'url'   => (string) $term_url,
+		);
+	}
+
+	/**
+	 * Resolve published glossary terms whose primary Category is the given term.
+	 *
+	 * Performs one query for all published term posts, then filters by
+	 * `get_primary_category()` — tax assignment alone is insufficient.
+	 *
+	 * @param \WP_Term $category Category term.
+	 * @return \WP_Post[]
+	 */
+	public static function get_posts_with_primary_category( $category ) {
+		if ( ! ( $category instanceof \WP_Term ) || self::TAXONOMY !== $category->taxonomy ) {
+			return array();
+		}
+
+		if ( ! Cat_Term_Settings::are_categories_enabled() ) {
+			return array();
+		}
+
+		$category_id = (int) $category->term_id;
+		$members     = array();
+
+		$posts = get_posts(
+			array(
+				'post_type'        => Cat_Glossary_Admin::POST_TYPE,
+				'post_status'      => 'publish',
+				'numberposts'      => -1,
+				'orderby'          => 'title',
+				'order'            => 'ASC',
+				'suppress_filters' => false,
+			)
+		);
+
+		foreach ( $posts as $term_post ) {
+			$primary = self::get_primary_category( $term_post->ID );
+			if ( $primary && (int) $primary->term_id === $category_id ) {
+				$members[] = $term_post;
+			}
+		}
+
+		return $members;
+	}
+
+	/**
+	 * Build hasDefinedTerm member nodes for a Category DefinedTermSet.
+	 *
+	 * @param \WP_Term $category Category term.
+	 * @return array<int, array<string, string>>
+	 */
+	public static function get_has_defined_term_members( $category ) {
+		$members = array();
+
+		foreach ( self::get_posts_with_primary_category( $category ) as $term_post ) {
+			$node = self::get_compact_defined_term_schema( $term_post );
+			if ( ! empty( $node ) ) {
+				$members[] = $node;
+			}
+		}
+
+		return $members;
+	}
+
+	/**
 	 * Build canonical DefinedTermSet schema for a Category term.
 	 *
 	 * @param \WP_Term $category Category term.
@@ -273,6 +362,11 @@ class Cat_Term_Category {
 			'description' => is_string( $category->description ) ? trim( wp_strip_all_tags( $category->description ) ) : '',
 		);
 
+		$has_defined_term = self::get_has_defined_term_members( $category );
+		if ( ! empty( $has_defined_term ) ) {
+			$schema['hasDefinedTerm'] = $has_defined_term;
+		}
+
 		/**
 		 * Filter canonical DefinedTermSet schema for a Category.
 		 *
@@ -282,6 +376,11 @@ class Cat_Term_Category {
 		$schema = apply_filters( 'context_authority_toolkit_schema_canonical_defined_term_set', $schema, $category );
 
 		foreach ( $schema as $key => $value ) {
+			if ( is_array( $value ) && empty( $value ) ) {
+				unset( $schema[ $key ] );
+				continue;
+			}
+
 			if ( ! is_array( $value ) && '' === trim( (string) $value ) ) {
 				unset( $schema[ $key ] );
 			}
