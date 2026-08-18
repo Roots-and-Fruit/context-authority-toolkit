@@ -25,7 +25,7 @@ This plugin detects glossary terms in post/comment content and wraps the **first
 | `includes/class-cat-glossary-admin.php` | CPT registration, meta, block editor sidebar |
 | `includes/class-cat-glossary-hovercards.php` | Frontend asset enqueueing |
 | `includes/class-cat-seo-peacekeeper.php` | Schema transport, semantic wrappers, WebPage.mainEntity |
-| `includes/class-cat-term-single-chrome.php` | Term-single visible lead + aliases HTML (`Cat_Term_Single_Chrome`) |
+| `includes/class-cat-term-single-chrome.php` | Term-single visible lead + aliases + related HTML (`Cat_Term_Single_Chrome`) |
 | `includes/class-cat-term-settings.php` | Term → Settings (slug, categories toggle, permalink mode) |
 | `includes/class-cat-term-category.php` | Category taxonomy (`cat-term-category`) + DefinedTermSet helpers |
 | `includes/class-cat-abilities.php` | Abilities API CRUD + term meta + Category assignment (MCP tools) |
@@ -35,7 +35,7 @@ This plugin detects glossary terms in post/comment content and wraps the **first
 ## Data model
 
 - **CPT:** `term` (never rename without explicit approval; rewrite base via `Cat_Term_Settings::get_term_slug()`)
-- **Meta keys:** `cat_alternatives` (array), `cat_tooltip_content` (plain text), `cat_disable_autolinking` (boolean)
+- **Meta keys:** `cat_alternatives` (array), `cat_tooltip_content` (plain text), `cat_disable_autolinking` (boolean), `cat_related_terms` (array of related term post IDs; max 8; published `term` only; one-way)
 - **Term structure options:** `cat_term_slug`, `cat_categories_enabled`, `cat_term_permalink_include_category` — read only via `Cat_Term_Settings` getters
 - **Taxonomy:** `cat-term-category` when Categories enabled — labels always **Category** / **Categories**; never core `category`; caps map to `manage_options` (manage/edit/delete) and `edit_posts` (assign) — never `manage_categories`
 - **Primary Category:** `cat_primary_category` post meta (term ID) — resolve only via `Cat_Term_Category::get_primary_category()`

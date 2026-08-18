@@ -12,8 +12,9 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Bootstraps plugin services on `plugins_loaded`
 - `includes/class-cat-glossary-admin.php`
   - Registers glossary CPT (`term`)
-  - Registers REST-backed meta for block editor sidebar fields
+  - Registers REST-backed meta for block editor sidebar fields (including `cat_related_terms`)
   - Sanitizes `sameAs` and source repeater inputs to valid public `http/https` URLs and strict `YYYY-MM-DD` dates
+  - Sanitizes related term IDs to published `term` posts only (unique, never self, cap 8, one-way)
   - Enqueues custom block editor sidebar controls
   - Runs one-time tooltip content migration from legacy post content
 - `includes/class-cat-glossary.php`
@@ -26,16 +27,16 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
   - Skips excluded HTML contexts
   - Wraps first in-content term match with trigger/panel markup
 - `includes/class-cat-seo-peacekeeper.php`
-  - Builds canonical `DefinedTerm` data from CAT-owned CPT/meta fields (including `alternateName` / `termCode` from alternatives)
+  - Builds canonical `DefinedTerm` data from CAT-owned CPT/meta fields (including `alternateName` / `termCode` from alternatives and `seeAlso` from related terms)
   - Selects schema transport mode (standalone/Yoast/Rank Math/SEOPress/off)
   - Normalizes schema URL/date fields before output or adapter handoff
   - Injects schema into SEO plugin hooks or prints standalone JSON-LD (`WebPage` + `mainEntity` on term singles)
   - Adds semantic microdata wrappers (`aria-labelledby` + `dfn` id linkage) and read-aloud sanitization pipeline
-  - Delegates visible lead/alias HTML to `Cat_Term_Single_Chrome`
+  - Delegates visible lead/alias/related HTML to `Cat_Term_Single_Chrome`
 - `includes/class-cat-term-single-chrome.php`
-  - Renders term-single visitor chrome: tooltip lead and “Also known as” aliases
-  - Public helpers for display aliases, termCode detection, and lead-duplication comparison
-  - Extended by later phases (related terms / classic sidebar stay out of this class until those issues)
+  - Renders term-single visitor chrome: tooltip lead, “Also known as” aliases, and Related terms list
+  - Public helpers for display aliases, termCode detection, lead-duplication comparison, and related-term ID resolution
+  - Related terms stay out of the glossary matcher / items cache (editor-chosen links only; not inferred from Category)
 - `includes/class-cat-glossary-hovercards.php`
   - Enqueues frontend CSS/JS assets
 - `includes/class-cat-term-settings.php`
@@ -71,6 +72,7 @@ Context & Authority Toolkit adds glossary term detection and tooltip/popover ren
 - Meta key: `cat_disable_autolinking` (boolean toggle for public content)
 - Meta key: `cat_same_as` (array of external authority URLs)
 - Meta key: `cat_sources` (array of citation rows with url/title/publisher/date)
+- Meta key: `cat_related_terms` (array of related glossary term post IDs; published `term` only; unique; never self; max 8; one-way)
 - Option: `cat_schema_output_mode` (`auto|standalone|off`)
 - Option: `cat_breadcrumb_integration` (boolean)
 - Option: `cat_term_slug` (rewrite base; default `term`)

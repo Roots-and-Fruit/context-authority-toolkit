@@ -323,6 +323,7 @@ class Cat_SEO_Peacekeeper {
 			'inDefinedTermSet' => (string) $defined_set,
 			'alternateName'    => $alias_props['alternateName'],
 			'sameAs'           => $this->normalize_same_as_array( $same_as_raw ),
+			'seeAlso'          => $this->get_related_term_see_also( $term_post->ID ),
 			'citation'         => $this->normalize_citation_array( $sources_raw ),
 		);
 
@@ -335,6 +336,35 @@ class Cat_SEO_Peacekeeper {
 		$canonical = apply_filters( 'context_authority_toolkit_schema_canonical_term_data', $canonical, $term_post );
 
 		return $this->remove_empty_schema_properties( $canonical );
+	}
+
+	/**
+	 * Build seeAlso permalinks from related glossary terms.
+	 *
+	 * Uses chrome read-time filtering; returns unique public http/https
+	 * permalinks in stored related-ID order. Empty when none qualify.
+	 *
+	 * @param int $term_post_id Term post ID.
+	 * @return string[]
+	 */
+	public function get_related_term_see_also( $term_post_id ) {
+		$chrome      = $this->term_chrome instanceof Cat_Term_Single_Chrome ? $this->term_chrome : new Cat_Term_Single_Chrome();
+		$related_ids = $chrome->get_related_term_ids( $term_post_id );
+		$urls        = array();
+		$seen        = array();
+
+		foreach ( $related_ids as $related_id ) {
+			$permalink = get_permalink( $related_id );
+			$url       = $this->sanitize_schema_url( $permalink );
+			if ( '' === $url || isset( $seen[ $url ] ) ) {
+				continue;
+			}
+
+			$seen[ $url ] = true;
+			$urls[]       = $url;
+		}
+
+		return $urls;
 	}
 
 	/**
@@ -725,6 +755,7 @@ class Cat_SEO_Peacekeeper {
 		$chrome        = $this->term_chrome instanceof Cat_Term_Single_Chrome ? $this->term_chrome : new Cat_Term_Single_Chrome();
 		$lead_html     = $chrome->render_lead_html( $term_id, $content );
 		$aliases_html  = $chrome->render_aliases_html( $term_id );
+		$related_html  = $chrome->render_related_html( $term_id );
 		$term_label_id = sprintf( 'cat-defined-term-name-%d', (int) $term_id );
 		$semantic      = $this->inject_defined_term_name_markup( $content, $title, $term_label_id );
 		$name_id       = isset( $semantic['name_id'] ) ? trim( (string) $semantic['name_id'] ) : '';
@@ -736,11 +767,12 @@ class Cat_SEO_Peacekeeper {
 		}
 
 		return sprintf(
-			'<article%1$s><div itemprop="description" role="definition">%2$s%3$s</div>%4$s</article>',
+			'<article%1$s><div itemprop="description" role="definition">%2$s%3$s</div>%4$s%5$s</article>',
 			$article_attributes,
 			$lead_html,
 			$description,
-			$aliases_html
+			$aliases_html,
+			$related_html
 		);
 	}
 

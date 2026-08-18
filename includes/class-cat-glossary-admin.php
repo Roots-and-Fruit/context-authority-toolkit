@@ -46,6 +46,16 @@ class Cat_Glossary_Admin {
 	const SOURCES_META_KEY = 'cat_sources';
 
 	/**
+	 * Related glossary term IDs meta key.
+	 */
+	const RELATED_TERMS_META_KEY = 'cat_related_terms';
+
+	/**
+	 * Maximum related terms stored per glossary term.
+	 */
+	const RELATED_TERMS_MAX = 8;
+
+	/**
 	 * Migration option key.
 	 */
 	const TOOLTIP_MIGRATION_OPTION_KEY = 'cat_tooltip_meta_migration_v1';
@@ -217,6 +227,26 @@ class Cat_Glossary_Admin {
 			)
 		);
 
+		register_post_meta(
+			self::POST_TYPE,
+			self::RELATED_TERMS_META_KEY,
+			array(
+				'type'              => 'array',
+				'single'            => true,
+				'show_in_rest'      => array(
+					'schema' => array(
+						'type'    => 'array',
+						'items'   => array(
+							'type' => 'integer',
+						),
+						'default' => array(),
+					),
+				),
+				'sanitize_callback' => array( $this, 'sanitize_related_terms_meta_callback' ),
+				'auth_callback'     => array( $this, 'can_edit_term_meta' ),
+			)
+		);
+
 		$this->register_public_post_meta();
 	}
 
@@ -269,7 +299,7 @@ class Cat_Glossary_Admin {
 		wp_enqueue_script(
 			'cat-term-editor-sidebar',
 			CAT_TOOLKIT_URL . 'assets/js/term-editor-sidebar.js',
-			array( 'wp-components', 'wp-data', 'wp-edit-post', 'wp-element', 'wp-i18n', 'wp-plugins' ),
+			array( 'wp-api-fetch', 'wp-components', 'wp-data', 'wp-edit-post', 'wp-element', 'wp-i18n', 'wp-plugins' ),
 			CAT_TOOLKIT_VERSION,
 			true
 		);
@@ -282,6 +312,8 @@ class Cat_Glossary_Admin {
 					'disableAutolinkMeta' => self::DISABLE_AUTOLINKING_META_KEY,
 					'sameAsMeta'          => self::SAME_AS_META_KEY,
 					'sourcesMeta'         => self::SOURCES_META_KEY,
+					'relatedTermsMeta'    => self::RELATED_TERMS_META_KEY,
+					'relatedTermsMax'     => self::RELATED_TERMS_MAX,
 				)
 			) . ';',
 			'before'
@@ -372,6 +404,112 @@ class Cat_Glossary_Admin {
 		}
 
 		return array_values( array_unique( $normalized ) );
+	}
+
+	/**
+	 * Sanitize callback used by register_meta for related terms.
+	 *
+	 * Resolves the current post ID from REST/classic save context because
+	 * sanitize_callback does not receive object_id.
+	 *
+	 * @param mixed $ids Raw related term IDs.
+	 * @return int[]
+	 */
+	public function sanitize_related_terms_meta_callback( $ids ) {
+		return $this->sanitize_related_terms_meta( $ids, $this->resolve_current_term_post_id() );
+	}
+
+	/**
+	 * Sanitize related glossary term IDs.
+	 *
+	 * Keeps published `term` CPT IDs only, unique, never self, capped at
+	 * RELATED_TERMS_MAX. The ninth ID and beyond are not stored. One-way:
+	 * does not auto-reciprocate on related posts.
+	 *
+	 * @param mixed $ids     Raw related term IDs.
+	 * @param int   $self_id Current term post ID to exclude (0 when unknown).
+	 * @return int[]
+	 */
+	public function sanitize_related_terms_meta( $ids, $self_id = 0 ) {
+		if ( ! is_array( $ids ) ) {
+			return array();
+		}
+
+		$self_id   = absint( $self_id );
+		$sanitized = array();
+		$seen      = array();
+
+		foreach ( $ids as $raw_id ) {
+			$id = absint( $raw_id );
+			if ( $id <= 0 || isset( $seen[ $id ] ) ) {
+				continue;
+			}
+
+			if ( $self_id > 0 && $id === $self_id ) {
+				continue;
+			}
+
+			$related_post = get_post( $id );
+			if (
+				! $related_post ||
+				self::POST_TYPE !== $related_post->post_type ||
+				'publish' !== $related_post->post_status
+			) {
+				continue;
+			}
+
+			$seen[ $id ] = true;
+			$sanitized[] = $id;
+
+			if ( count( $sanitized ) >= self::RELATED_TERMS_MAX ) {
+				break;
+			}
+		}
+
+		return $sanitized;
+	}
+
+	/**
+	 * Resolve the term post being saved from REST or classic editor context.
+	 *
+	 * @return int
+	 */
+	private function resolve_current_term_post_id() {
+		if ( ! empty( $_POST['post_ID'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Missing -- meta sanitize path; auth handled by auth_callback.
+			return absint( wp_unslash( $_POST['post_ID'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Missing
+		}
+
+		if ( ! empty( $_REQUEST['post_id'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			return absint( wp_unslash( $_REQUEST['post_id'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+		}
+
+		if ( defined( 'REST_REQUEST' ) && REST_REQUEST ) {
+			$rest_route = '';
+			if ( isset( $GLOBALS['wp'] ) && isset( $GLOBALS['wp']->query_vars['rest_route'] ) ) {
+				$rest_route = (string) $GLOBALS['wp']->query_vars['rest_route'];
+			}
+
+			if ( '' === $rest_route && isset( $_SERVER['REQUEST_URI'] ) ) {
+				$request_uri = sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+				$path        = (string) wp_parse_url( $request_uri, PHP_URL_PATH );
+				$rest_prefix = '/' . rest_get_url_prefix() . '/';
+				$prefix_pos  = strpos( $path, $rest_prefix );
+				if ( false !== $prefix_pos ) {
+					$rest_route = substr( $path, $prefix_pos + strlen( $rest_prefix ) - 1 );
+				}
+			}
+
+			if ( preg_match( '#/wp/v2/term(?:s)?/(\d+)#', $rest_route, $matches ) ) {
+				return absint( $matches[1] );
+			}
+		}
+
+		$post = get_post();
+		if ( $post instanceof \WP_Post && self::POST_TYPE === $post->post_type ) {
+			return (int) $post->ID;
+		}
+
+		return 0;
 	}
 
 	/**
