@@ -6,5 +6,6 @@ docs/
 test-results/
 tests/
 
+!CHANGELOG.md
 *.md
 phpcs.xml.dist

@@ -1,118 +1,95 @@
-name: Build Release ZIP
+name: Release
 
 on:
-  release:
-    types: [created]
   push:
-    tags:
-      - "v*"
+    branches: [main, master]
   workflow_dispatch:
 
-jobs:
-  build-zip:
-    name: Build plugin zip
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
+permissions:
+  contents: write
 
+jobs:
+  release:
+    name: Release plugin zip
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Determine version and package names
-        id: vars
+      - name: Read the plugin version
+        id: version
         shell: bash
         run: |
-          if [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
-            RAW_VERSION="${GITHUB_REF#refs/tags/}"
-          elif [[ "${{ github.event_name }}" == "release" ]]; then
-            RAW_VERSION="${{ github.event.release.tag_name }}"
+          set -euo pipefail
+          VERSION=$(grep -m1 "Version:" context-authority-toolkit.php | sed -E 's/.*Version:[[:space:]]*//' | tr -d '\r')
+          if [[ -z "${VERSION}" ]]; then
+            echo "Plugin version header was not found."
+            exit 1
+          fi
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "zip_name=context-authority-toolkit-${VERSION}.zip" >> "$GITHUB_OUTPUT"
+          if git ls-remote --tags origin "refs/tags/${TAG}" | grep -q "${TAG}$"; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} already exists."
           else
-            RAW_VERSION="dev-${GITHUB_SHA::7}"
+            echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
-          VERSION="${RAW_VERSION#v}"
-          ZIP_NAME="context-authority-toolkit-${VERSION}.zip"
-          ROOT_DIR="context-authority-toolkit"
-
-          echo "raw_version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "zip_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
-          echo "root_dir=${ROOT_DIR}" >> "$GITHUB_OUTPUT"
-
-      - name: Generate changelog body
+      - name: Extract changelog for this version
         id: changelog
+        if: steps.version.outputs.release == 'true'
         shell: bash
         env:
-          RELEASE_VERSION: ${{ steps.vars.outputs.version }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-
-          if [[ -z "$PREV_TAG" ]]; then
-            CHANGES=$(git log --pretty=format:"- %s (%h)" --no-merges)
-          else
-            CHANGES=$(git log "${PREV_TAG}..HEAD" --pretty=format:"- %s (%h)" --no-merges)
-          fi
-
-          if [[ -z "$CHANGES" ]]; then
-            CHANGES="- No changes detected"
-          fi
-
+          set -euo pipefail
           NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
-          {
-            echo "## Changes in v${RELEASE_VERSION}"
-            echo
-            echo "${CHANGES}"
-          } > "${NOTES_FILE}"
-
+          node .github/scripts/extract-release-notes.mjs \
+            --version "$RELEASE_VERSION" \
+            --out "$NOTES_FILE"
+          echo "===== GitHub release notes ====="
+          cat "$NOTES_FILE"
+          echo "================================"
           echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
 
       - name: Create ZIP package
         id: package
+        if: steps.version.outputs.release == 'true'
         shell: bash
         run: |
+          set -euo pipefail
           mkdir -p /tmp/cat-release
-          rsync -av --exclude-from=".distignore" ./ "/tmp/cat-release/${{ steps.vars.outputs.root_dir }}/"
-
+          rsync -a --exclude-from=".distignore" ./ "/tmp/cat-release/context-authority-toolkit/"
           cd /tmp/cat-release
-          zip -r "${GITHUB_WORKSPACE}/${{ steps.vars.outputs.zip_name }}" "${{ steps.vars.outputs.root_dir }}/"
+          zip -r "${GITHUB_WORKSPACE}/${{ steps.version.outputs.zip_name }}" "context-authority-toolkit/"
           cd "${GITHUB_WORKSPACE}"
-
-          if [[ ! -f "${{ steps.vars.outputs.zip_name }}" ]]; then
+          if [[ ! -f "${{ steps.version.outputs.zip_name }}" ]]; then
             echo "ZIP package was not created."
             exit 1
           fi
-
-          if ! unzip -l "${{ steps.vars.outputs.zip_name }}" | grep -q "${{ steps.vars.outputs.root_dir }}/"; then
-            echo "ZIP structure check failed."
-            exit 1
-          fi
-
-          echo "zip_path=${{ steps.vars.outputs.zip_name }}" >> "$GITHUB_OUTPUT"
+          echo "zip_path=${{ steps.version.outputs.zip_name }}" >> "$GITHUB_OUTPUT"
 
       - name: Upload ZIP as workflow artifact
+        if: steps.version.outputs.release == 'true'
         uses: actions/upload-artifact@v5
         with:
-          name: context-authority-toolkit-${{ steps.vars.outputs.version }}
+          name: context-authority-toolkit-${{ steps.version.outputs.version }}
           path: ${{ steps.package.outputs.zip_path }}
 
-      - name: Create or update GitHub release and attach ZIP
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+      - name: Create the GitHub release and attach the ZIP
+        if: steps.version.outputs.release == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.vars.outputs.raw_version }}"
-          TITLE="${TAG#v}"
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          TITLE="${{ steps.version.outputs.version }}"
           NOTES_FILE="${{ steps.changelog.outputs.notes_file }}"
           ZIP_PATH="${{ steps.package.outputs.zip_path }}"
-
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release edit "${TAG}" --notes-file "${NOTES_FILE}" --title "${TITLE}"
-          else
-            gh release create "${TAG}" --title "${TITLE}" --notes-file "${NOTES_FILE}"
-          fi
-
+          gh release create "${TAG}" --title "${TITLE}" --notes-file "${NOTES_FILE}" --target "${GITHUB_SHA}"
           gh release upload "${TAG}" "${ZIP_PATH}" --clobber

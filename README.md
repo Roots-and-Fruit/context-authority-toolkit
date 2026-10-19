@@ -100,7 +100,7 @@ This project is a clean fork of the WordPress.org Glossary plugin, with substant
 
 ## For contributors
 
-- WordPress.org plugin metadata and changelog: `readme.txt`
+- Notable changes: `CHANGELOG.md`. GitHub release notes are copied from that file. `readme.txt` carries the WordPress.org slice.
 - Internal architecture: `docs/internal/architecture.md`
 - Behavior contracts: `docs/internal/contracts.md`
 - Quality gates: `docs/testing/quality-gates.md`
