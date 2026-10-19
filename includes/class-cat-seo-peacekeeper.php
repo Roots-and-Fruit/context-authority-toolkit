@@ -981,6 +981,10 @@ class Cat_SEO_Peacekeeper {
 	 * @return int
 	 */
 	private function get_context_term_post_id() {
+		if ( is_post_type_archive( Cat_Glossary_Admin::POST_TYPE ) ) {
+			return 0;
+		}
+
 		if ( is_singular( Cat_Glossary_Admin::POST_TYPE ) ) {
 			$post_id = get_queried_object_id();
 			return $post_id > 0 ? absint( $post_id ) : 0;

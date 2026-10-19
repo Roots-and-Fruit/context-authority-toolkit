@@ -4,7 +4,7 @@ Tags: glossary, tooltips, schema, seo, aeo
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,13 @@ For full provenance and attribution details, see:
 * **Changelog:** Notable releases are in `CHANGELOG.md` in the plugin folder. GitHub release notes are copied from that file.
 
 == Changelog ==
+
+= 1.1.1 =
+Released 2026-10-19.
+
+**Fixed**
+
+* The glossary index schema is the DefinedTermSet for the whole glossary. It no longer describes whichever term happened to be in the loop.
 
 = 1.1.0 =
 Released 2026-10-19.

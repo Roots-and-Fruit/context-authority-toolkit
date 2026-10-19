@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-19
+
+### Fixed
+
+- The glossary index schema is the DefinedTermSet for the whole glossary. It no longer describes whichever term happened to be in the loop.
+
 ## [1.1.0] - 2026-10-19
 
 ### Added
@@ -97,7 +103,8 @@ First public 1.0 release closing #1 and #11–#17.
   - caps auto-linking to first two mentions
   - tooltip “Learn more” link now includes rel="help"
 
-[Unreleased]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v0.11.0...v1.0.0

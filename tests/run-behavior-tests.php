@@ -1258,6 +1258,36 @@ cat_assert(
 	is_string( $schema_term_url ) && in_array( $schema_term_url, $glossary_member_urls, true ),
 	'Category taxonomy test failed: a published term with no Category must be in the glossary set.'
 );
+$archive_query_backup = array(
+	'post'                  => isset( $GLOBALS['post'] ) ? $GLOBALS['post'] : null,
+	'is_singular'           => $GLOBALS['wp_query']->is_singular,
+	'is_single'             => $GLOBALS['wp_query']->is_single,
+	'is_archive'            => $GLOBALS['wp_query']->is_archive,
+	'is_post_type_archive'  => $GLOBALS['wp_query']->is_post_type_archive,
+);
+$GLOBALS['post'] = get_post( $schema_term_id );
+$GLOBALS['wp_query']->is_singular = false;
+$GLOBALS['wp_query']->is_single = false;
+$GLOBALS['wp_query']->is_archive = true;
+$GLOBALS['wp_query']->is_post_type_archive = true;
+$GLOBALS['wp_query']->query_vars['post_type'] = \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE;
+setup_postdata( $GLOBALS['post'] );
+$archive_context = new ReflectionMethod( $seo_peacekeeper, 'get_context_term_post_id' );
+$archive_context->setAccessible( true );
+cat_assert(
+	0 === (int) $archive_context->invoke( $seo_peacekeeper ),
+	'Category taxonomy test failed: the glossary archive must not treat the loop term as the schema subject.'
+);
+$GLOBALS['post'] = $archive_query_backup['post'];
+$GLOBALS['wp_query']->is_singular = $archive_query_backup['is_singular'];
+$GLOBALS['wp_query']->is_single = $archive_query_backup['is_single'];
+$GLOBALS['wp_query']->is_archive = $archive_query_backup['is_archive'];
+$GLOBALS['wp_query']->is_post_type_archive = $archive_query_backup['is_post_type_archive'];
+if ( $GLOBALS['post'] instanceof WP_Post ) {
+	setup_postdata( $GLOBALS['post'] );
+} else {
+	wp_reset_postdata();
+}
 cat_assert(
 	! is_wp_error( $category_link ) && ! empty( $with_cat_schema['inDefinedTermSet'] ) && (string) $category_link === (string) $with_cat_schema['inDefinedTermSet'],
 	'Category taxonomy test failed: categorized term inDefinedTermSet must use Category archive URL.'
