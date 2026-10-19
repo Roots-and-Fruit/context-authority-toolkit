@@ -4,7 +4,7 @@ Tags: glossary, tooltips, schema, seo, aeo
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 7.2
-Stable tag: 1.0.1
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -33,6 +33,17 @@ For full provenance and attribution details, see:
 * **Changelog:** Notable releases are in `CHANGELOG.md` in the plugin folder. GitHub release notes are copied from that file.
 
 == Changelog ==
+
+= 1.1.0 =
+Released 2026-10-19.
+
+**Added**
+
+* The glossary index at the term archive lists published terms and declares them as one DefinedTermSet. A term with no Category points at that set.
+
+**Fixed**
+
+* Sites using Slim SEO get one WebPage on a term, with the DefinedTerm as its main entity. CAT no longer prints a second WebPage.
 
 = 1.0.1 =
 Released 2026-08-18.

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-19
+
+### Added
+
+- The glossary index at the term archive lists published terms and declares them as one DefinedTermSet. A term with no Category points at that set.
+
+### Fixed
+
+- Sites using Slim SEO get one WebPage on a term, with the DefinedTerm as its main entity. CAT no longer prints a second WebPage.
+
 ## [1.0.1] - 2026-08-18
 
 ### Added
@@ -87,7 +97,8 @@ First public 1.0 release closing #1 and #11–#17.
   - caps auto-linking to first two mentions
   - tooltip “Learn more” link now includes rel="help"
 
-[Unreleased]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v0.11.0...v1.0.0
 [0.11.0]: https://github.com/Roots-and-Fruit/context-authority-toolkit/compare/v0.10.0...v0.11.0

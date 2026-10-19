@@ -824,6 +824,39 @@ cat_assert(
 	1 === $webpage_count && 1 === $defined_count && $adapter_main === $alias_schema['@id'],
 	'SEO Peacekeeper test failed: injecting CAT into a graph that already has WebPage must not yield two WebPages.'
 );
+cat_assert(
+	false !== has_filter( 'slim_seo_schema_graph', array( $seo_peacekeeper, 'inject_slim_seo_graph' ) ),
+	'SEO Peacekeeper test failed: Slim SEO graph filter must be registered.'
+);
+$slim_source = $seo_peacekeeper->get_canonical_term_schema( $schema_term_id );
+$slim_graph  = $seo_peacekeeper->merge_node_into_graph(
+	array(
+		array(
+			'@type' => 'WebPage',
+			'url'   => get_permalink( $schema_term_id ),
+		),
+	),
+	$slim_source
+);
+$slim_pages = 0;
+$slim_terms = 0;
+$slim_main  = '';
+foreach ( $slim_graph as $slim_node ) {
+	if ( ! is_array( $slim_node ) ) {
+		continue;
+	}
+	if ( isset( $slim_node['@type'] ) && 'WebPage' === $slim_node['@type'] ) {
+		++$slim_pages;
+		$slim_main = isset( $slim_node['mainEntity'] ) ? (string) $slim_node['mainEntity'] : '';
+	}
+	if ( isset( $slim_node['@type'] ) && 'DefinedTerm' === $slim_node['@type'] ) {
+		++$slim_terms;
+	}
+}
+cat_assert(
+	1 === $slim_pages && 1 === $slim_terms && ! empty( $slim_source['@id'] ) && $slim_main === (string) $slim_source['@id'],
+	'SEO Peacekeeper test failed: Slim SEO merge must keep one WebPage and point mainEntity at the DefinedTerm.'
+);
 
 // Restore schema term context for later semantic tests that reuse it.
 $schema_term_post = get_post( $schema_term_id );
@@ -1195,9 +1228,35 @@ $fallback_schema = $seo_peacekeeper->get_canonical_term_schema( $schema_term_id 
 $category_link   = get_term_link( $cat_term_id, \ContextAuthorityToolkit\Cat_Term_Category::TAXONOMY );
 $with_cat_schema = $seo_peacekeeper->get_canonical_term_schema( $categorized_post_id );
 
+$glossary_archive_url = get_post_type_archive_link( \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE );
 cat_assert(
-	! empty( $fallback_schema['inDefinedTermSet'] ),
-	'Category taxonomy test failed: uncategorized terms still need inDefinedTermSet fallback.'
+	! empty( $fallback_schema['inDefinedTermSet'] ) && ! is_wp_error( $glossary_archive_url ) && (string) $glossary_archive_url === (string) $fallback_schema['inDefinedTermSet'],
+	'Category taxonomy test failed: uncategorized terms must point inDefinedTermSet at the glossary archive.'
+);
+$term_type = get_post_type_object( \ContextAuthorityToolkit\Cat_Glossary_Admin::POST_TYPE );
+cat_assert(
+	$term_type && ! empty( $term_type->has_archive ),
+	'Category taxonomy test failed: the term post type must have a public archive.'
+);
+$glossary_set = \ContextAuthorityToolkit\Cat_Term_Category::get_glossary_archive_defined_term_set_schema();
+cat_assert(
+	! empty( $glossary_set['@type'] ) && 'DefinedTermSet' === $glossary_set['@type']
+		&& ! empty( $glossary_set['@id'] ) && false !== strpos( (string) $glossary_set['@id'], '#definedtermset' )
+		&& ! empty( $glossary_set['url'] ) && (string) $glossary_archive_url === (string) $glossary_set['url'],
+	'Category taxonomy test failed: glossary archive schema must be a DefinedTermSet at the archive URL.'
+);
+$glossary_member_urls = array();
+if ( ! empty( $glossary_set['hasDefinedTerm'] ) && is_array( $glossary_set['hasDefinedTerm'] ) ) {
+	foreach ( $glossary_set['hasDefinedTerm'] as $glossary_member ) {
+		if ( is_array( $glossary_member ) && ! empty( $glossary_member['url'] ) ) {
+			$glossary_member_urls[] = (string) $glossary_member['url'];
+		}
+	}
+}
+$schema_term_url = get_permalink( $schema_term_id );
+cat_assert(
+	is_string( $schema_term_url ) && in_array( $schema_term_url, $glossary_member_urls, true ),
+	'Category taxonomy test failed: a published term with no Category must be in the glossary set.'
 );
 cat_assert(
 	! is_wp_error( $category_link ) && ! empty( $with_cat_schema['inDefinedTermSet'] ) && (string) $category_link === (string) $with_cat_schema['inDefinedTermSet'],

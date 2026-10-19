@@ -70,6 +70,7 @@ class Cat_SEO_Peacekeeper {
 		add_filter( 'rank_math/json_ld', array( $this, 'inject_rank_math_json_ld' ), 20, 2 );
 		add_filter( 'rank_math/json_ld/breadcrumbs_enabled', array( $this, 'filter_rank_math_breadcrumb_setting' ) );
 		add_filter( self::SEOPRESS_SCHEMA_FILTER, array( $this, 'inject_seopress_schema' ) );
+		add_filter( 'slim_seo_schema_graph', array( $this, 'inject_slim_seo_graph' ) );
 	}
 
 	/**
@@ -288,6 +289,10 @@ class Cat_SEO_Peacekeeper {
 			// If SEOPress is active but no compatible schema hook is available,
 			// keep CAT in standalone mode to preserve schema parity.
 			return self::MODE_STANDALONE;
+		}
+
+		if ( defined( 'SLIM_SEO_VER' ) ) {
+			return 'slim-seo';
 		}
 
 		return self::MODE_STANDALONE;
@@ -1023,11 +1028,15 @@ class Cat_SEO_Peacekeeper {
 	}
 
 	/**
-	 * Build DefinedTermSet schema for the current Category archive context.
+	 * Build DefinedTermSet schema for the glossary archive or a Category archive.
 	 *
 	 * @return array
 	 */
 	private function get_context_defined_term_set_schema() {
+		if ( is_post_type_archive( Cat_Glossary_Admin::POST_TYPE ) ) {
+			return Cat_Term_Category::get_glossary_archive_defined_term_set_schema();
+		}
+
 		if ( ! Cat_Term_Settings::are_categories_enabled() ) {
 			return array();
 		}
@@ -1042,6 +1051,69 @@ class Cat_SEO_Peacekeeper {
 		}
 
 		return Cat_Term_Category::get_canonical_defined_term_set_schema( $category );
+	}
+
+	/**
+	 * Inject the current term or glossary set into a Slim SEO graph.
+	 *
+	 * Slim SEO already prints a WebPage. CAT must not print a second one.
+	 *
+	 * @param array $graph Slim SEO graph nodes.
+	 * @return array
+	 */
+	public function inject_slim_seo_graph( $graph ) {
+		if ( 'slim-seo' !== $this->resolve_transport_mode() ) {
+			return $graph;
+		}
+
+		$term_id = $this->get_context_term_post_id();
+		if ( $term_id > 0 ) {
+			$node = $this->get_canonical_term_schema( $term_id );
+		} else {
+			$node = $this->get_context_defined_term_set_schema();
+		}
+
+		if ( empty( $node ) ) {
+			return $graph;
+		}
+
+		return $this->merge_node_into_graph( $graph, $node );
+	}
+
+	/**
+	 * Append a CAT schema node and point the existing page node at it.
+	 *
+	 * Does not add a WebPage. Skips the append when the same @id is already present.
+	 *
+	 * @param mixed $graph Schema graph nodes.
+	 * @param array $node  DefinedTerm or DefinedTermSet node.
+	 * @return array
+	 */
+	public function merge_node_into_graph( $graph, array $node ) {
+		if ( ! is_array( $graph ) ) {
+			$graph = array();
+		}
+
+		$node_id = isset( $node['@id'] ) ? (string) $node['@id'] : '';
+		$found   = false;
+		if ( '' !== $node_id ) {
+			foreach ( $graph as $existing ) {
+				if ( is_array( $existing ) && isset( $existing['@id'] ) && (string) $existing['@id'] === $node_id ) {
+					$found = true;
+					break;
+				}
+			}
+		}
+
+		if ( ! $found ) {
+			$graph[] = $node;
+		}
+
+		if ( '' === $node_id ) {
+			return $graph;
+		}
+
+		return $this->attach_main_entity_to_graph( $graph, $node_id );
 	}
 
 	/**

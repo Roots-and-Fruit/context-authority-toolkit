@@ -95,10 +95,10 @@ When tooltip **interaction behavior** changes, also run:
   - update `Stable tag`
   - add/update changelog entry
 - Ensure plugin assets use `CAT_TOOLKIT_VERSION` for cache-busting query args.
-- Commit release changes, create an annotated tag (for example `v0.9.2`), and push branch + tag.
-- This repository auto-publishes GitHub Releases from pushed tags via GitHub Actions.
-- After pushing a tag, validate release publication and asset upload (MCP or GitHub UI), including:
-  - release tag exists (for example `v0.9.2`)
+- Commit release changes on `main` and push that branch. Do not push a tag by hand.
+- A push to `main` whose plugin header version has no tag yet builds the zip and publishes the GitHub release from `CHANGELOG.md`.
+- After that workflow finishes, validate the release, including:
+  - release tag exists (for example `v1.1.0`)
   - release zip asset is attached
 
 ## Canonical docs

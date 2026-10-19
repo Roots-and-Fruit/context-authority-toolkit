@@ -66,6 +66,7 @@ class Cat_Glossary_Admin {
 	public function __construct() {
 		add_action( 'init', array( $this, 'register_post_type' ) );
 		add_action( 'init', array( $this, 'register_post_meta' ) );
+		add_action( 'init', array( $this, 'maybe_flag_rewrite_flush' ), 20 );
 		add_action( 'init', array( $this, 'maybe_run_tooltip_migration' ), 20 );
 		add_action( 'enqueue_block_editor_assets', array( $this, 'enqueue_block_editor_assets' ) );
 	}
@@ -96,6 +97,7 @@ class Cat_Glossary_Admin {
 				'public'       => true,
 				'show_ui'      => true,
 				'show_in_rest' => true,
+				'has_archive'  => Cat_Term_Settings::get_term_slug(),
 				'menu_icon'    => add_query_arg( 'ver', CAT_TOOLKIT_VERSION, CAT_TOOLKIT_URL . 'assets/images/term-icon.svg' ),
 				'hierarchical' => false,
 				'rewrite'      => array(
@@ -115,6 +117,24 @@ class Cat_Glossary_Admin {
 				'top'
 			);
 		}
+	}
+
+	/**
+	 * Flush rewrites once after an upgrade that changes public term URLs.
+	 *
+	 * Existing installs do not re-run activation, so the glossary archive
+	 * would stay a 404 until something else flushed permalinks.
+	 *
+	 * @return void
+	 */
+	public function maybe_flag_rewrite_flush() {
+		$stored = get_option( 'cat_toolkit_rewrite_version', '' );
+		if ( CAT_TOOLKIT_VERSION === $stored ) {
+			return;
+		}
+
+		Cat_Term_Settings::request_rewrite_flush();
+		update_option( 'cat_toolkit_rewrite_version', CAT_TOOLKIT_VERSION, true );
 	}
 
 	/**

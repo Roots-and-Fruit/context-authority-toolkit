@@ -29,8 +29,8 @@ This document defines live behavior contracts that must remain true unless a cha
 - Rewrite rules flush only via deferred flag after structure options change — never on every `init` or admin page load. The flag is autoloaded only while set and deleted after the flush.
 - Consumers must read structure settings through `Cat_Term_Settings` getters.
 - All glossary cache invalidation must go through `Cat_Glossary::clear_items_cache()`; no module may hardcode cache keys.
-- When a glossary term has a Category assigned, canonical DefinedTerm `inDefinedTermSet` uses that Category archive URL; otherwise it falls back to the glossary archive URL.
-- Category archive pages emit canonical `DefinedTermSet` schema (standalone and SEO transport adapters). `hasDefinedTerm` lists compact `DefinedTerm` members (`@type`, `@id`, `name`, `url`) for published glossary terms whose **primary** Category is that taxonomy term (same resolution as `Cat_Term_Category::get_primary_category()` / `inDefinedTermSet`); sorted by title ascending; omitted when empty.
+- When a glossary term has a Category assigned, canonical DefinedTerm `inDefinedTermSet` uses that Category archive URL; otherwise it uses the term post type archive URL (`has_archive` is the term base slug, including when Category permalinks are on).
+- The term post type archive emits one `DefinedTermSet` (`@id` ends in `#definedtermset`, name `Glossary`) whose `hasDefinedTerm` lists every published term as a compact node. Category archive pages emit their own `DefinedTermSet`. `hasDefinedTerm` members are compact (`@type`, `@id`, `name`, `url`), sorted by title ascending, and omitted when empty. Category membership is published glossary terms whose **primary** Category is that taxonomy term.
 
 ## Abilities / MCP contract
 
@@ -87,7 +87,7 @@ This document defines live behavior contracts that must remain true unless a cha
 - Canonical term schema maps `cat_alternatives` into `alternateName` (array). Values equal to the term title (case-insensitive trim) are skipped. Empty alternatives omit `alternateName` and `termCode`.
 - Abbreviations from that same list also become `termCode` when they are 2–6 characters, letters/digits only, and fully uppercase (for example `WP`, `API`, `AEO`). Mixed-case values such as `SaaS` stay alias-only.
 - On term singles, standalone JSON-LD `@graph` includes a `WebPage` (`url` = term permalink) whose `mainEntity` is the DefinedTerm `@id` (`{permalink}/#definedterm`), plus the DefinedTerm node. Category archives remain `DefinedTermSet` only (no WebPage wrapper).
-- Yoast / Rank Math / SEOPress adapters must not append a second `WebPage`. When a page node already exists (`WebPage` or similar), they set `mainEntity` on that node and still append the CAT DefinedTerm. Yoast DefinedTerm injection remains via `wpseo_schema_graph_pieces`; `mainEntity` attachment uses `wpseo_schema_graph` when available.
+- Yoast / Rank Math / SEOPress / Slim SEO adapters must not append a second `WebPage`. When a page node already exists (`WebPage` or similar, including Slim SEO `CollectionPage` on the glossary archive), they set `mainEntity` on that node and still append the CAT DefinedTerm or DefinedTermSet. Yoast DefinedTerm injection remains via `wpseo_schema_graph_pieces`; `mainEntity` attachment uses `wpseo_schema_graph` when available. Slim SEO uses `slim_seo_schema_graph` and skips CAT's standalone script.
 - URL-bearing schema fields (`sameAs`, `seeAlso`, citation `url`) only allow valid public `http/https` URLs.
 - Editor Wikidata lookup is optional UX for `cat_same_as` only: editors must pick a result; cancel/clear leaves the list unchanged; no auto-fill on save or title match. Canonical entity URLs are `https://www.wikidata.org/wiki/Q{digits}`. Wikipedia sitelinks remain manual paste. Lookup does not introduce a new meta key and does not change Peacekeeper `sameAs` mapping. Schema output `off` still suppresses JSON-LD while meta remains stored.
 - `seeAlso` on the DefinedTerm node lists permalinks of explicitly related published glossary terms (`cat_related_terms`). Empty related lists omit `seeAlso` (and omit the visible related block). `seeAlso` is not placed on the WebPage node.
@@ -100,6 +100,7 @@ This document defines live behavior contracts that must remain true unless a cha
   - Yoast via `wpseo_schema_graph_pieces` (+ `wpseo_schema_graph` for `mainEntity`)
   - Rank Math via `rank_math/json_ld`
   - SEOPress via documented schema filter path
+  - Slim SEO via `slim_seo_schema_graph` when `SLIM_SEO_VER` is defined and no earlier transport owns the page
 
 ## Semantic and read-aloud contract
 

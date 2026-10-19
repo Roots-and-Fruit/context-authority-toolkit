@@ -390,6 +390,72 @@ class Cat_Term_Category {
 	}
 
 	/**
+	 * Build the glossary archive DefinedTermSet (every published term).
+	 *
+	 * Used when a term has no primary Category, and on the post type archive.
+	 * Category archives keep their own set.
+	 *
+	 * @return array
+	 */
+	public static function get_glossary_archive_defined_term_set_schema() {
+		$url = get_post_type_archive_link( Cat_Glossary_Admin::POST_TYPE );
+		if ( ! $url ) {
+			$url = home_url( '/' . Cat_Term_Settings::get_term_slug() . '/' );
+		}
+
+		$url    = (string) $url;
+		$schema = array(
+			'@type' => 'DefinedTermSet',
+			'@id'   => trailingslashit( $url ) . '#definedtermset',
+			'name'  => __( 'Glossary', 'context-authority-toolkit' ),
+			'url'   => $url,
+		);
+
+		$members = array();
+		$posts   = get_posts(
+			array(
+				'post_type'        => Cat_Glossary_Admin::POST_TYPE,
+				'post_status'      => 'publish',
+				'numberposts'      => -1,
+				'orderby'          => 'title',
+				'order'            => 'ASC',
+				'suppress_filters' => false,
+			)
+		);
+
+		foreach ( $posts as $term_post ) {
+			$node = self::get_compact_defined_term_schema( $term_post );
+			if ( ! empty( $node ) ) {
+				$members[] = $node;
+			}
+		}
+
+		if ( ! empty( $members ) ) {
+			$schema['hasDefinedTerm'] = $members;
+		}
+
+		/**
+		 * Filter the glossary archive DefinedTermSet.
+		 *
+		 * @param array $schema Schema node.
+		 */
+		$schema = apply_filters( 'context_authority_toolkit_schema_glossary_defined_term_set', $schema );
+
+		foreach ( $schema as $key => $value ) {
+			if ( is_array( $value ) && empty( $value ) ) {
+				unset( $schema[ $key ] );
+				continue;
+			}
+
+			if ( ! is_array( $value ) && '' === trim( (string) $value ) ) {
+				unset( $schema[ $key ] );
+			}
+		}
+
+		return $schema;
+	}
+
+	/**
 	 * Slugs that Categories may never use (URL collision protection).
 	 *
 	 * @return string[]
